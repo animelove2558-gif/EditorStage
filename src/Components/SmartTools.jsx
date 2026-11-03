@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import NumInput from './NumInput';
 import { getPrefs, setPrefs } from '../Core/prefs';
 import { useStore, set, edit, getState } from '../Core/store';
 import { detectSilence, cutRanges } from '../Services/ai/silence';
@@ -33,8 +34,8 @@ function SilenceTab() {
       <p className="st-help">Scans the audio waveform for silence and pauses, then ripple-deletes them on every track so picture and sound stay in sync.</p>
       {ui}
       <Row label="Threshold (dB)" hint="Anything quieter than this counts as silence"><input type="range" min="-70" max="-15" value={o.thresholdDb} onChange={(e) => { setO({ ...o, thresholdDb: +e.target.value }); setRes(null); }} /><b>{o.thresholdDb} dB</b></Row>
-      <Row label="Minimum silence" hint="Shorter pauses are kept"><input type="number" step="0.1" min="0.1" value={o.minSilence} onChange={(e) => { setO({ ...o, minSilence: +e.target.value }); setRes(null); }} /> s</Row>
-      <Row label="Keep padding" hint="Silence kept before/after speech so cuts do not clip words"><input type="number" step="0.02" min="0" value={o.padding} onChange={(e) => { setO({ ...o, padding: +e.target.value }); setRes(null); }} /> s</Row>
+      <Row label="Minimum silence" hint="Shorter pauses are kept"><NumInput type="number" step="0.1" min="0.1" value={o.minSilence} onChange={(e) => { setO({ ...o, minSilence: +e.target.value }); setRes(null); }} /> s</Row>
+      <Row label="Keep padding" hint="Silence kept before/after speech so cuts do not clip words"><NumInput type="number" step="0.02" min="0" value={o.padding} onChange={(e) => { setO({ ...o, padding: +e.target.value }); setRes(null); }} /> s</Row>
       <div className="st-actions"><button disabled={busy} onClick={analyze}>{busy ? 'Analyzing…' : 'Analyze'}</button>{res && <button className="primary" disabled={!res.ranges.length} onClick={apply}>Ripple Delete {res.ranges.length} ranges ({res.total.toFixed(1)} s)</button>}</div>
       {res && <LevelView res={res} thr={o.thresholdDb} />}
       {res && <ul className="list st-list">{res.ranges.slice(0, 200).map((r, i) => <li key={i} onClick={() => set({ playhead: r[0] })}>{fmt(r[0])} → {fmt(r[1])} <span className="dim">({(r[1] - r[0]).toFixed(2)} s)</span></li>)}</ul>}
@@ -70,7 +71,7 @@ function SubtitlesTab() {
       <Row label="Language"><select value={o.language} onChange={(e) => setO({ ...o, language: e.target.value })}>{LANGUAGES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Row>
       <Row label="Output"><select value={o.task} onChange={(e) => setO({ ...o, task: e.target.value })}><option value="transcribe">Same language as spoken</option><option value="translate">Translate to English</option></select></Row>
       <Row label="Model"><select value={o.model} onChange={(e) => setO({ ...o, model: e.target.value })}>{MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></Row>
-      <Row label="Line length"><input type="number" min="10" max="90" value={o.maxChars} onChange={(e) => setO({ ...o, maxChars: +e.target.value })} /> chars × <select value={o.lines} onChange={(e) => setO({ ...o, lines: +e.target.value })}><option value={1}>1 line</option><option value={2}>2 lines</option><option value={3}>3 lines</option></select>, max <input type="number" min="1" max="10" step="0.5" value={o.maxDur} onChange={(e) => setO({ ...o, maxDur: +e.target.value })} /> s</Row>
+      <Row label="Line length"><NumInput type="number" min="10" max="90" value={o.maxChars} onChange={(e) => setO({ ...o, maxChars: +e.target.value })} /> chars × <select value={o.lines} onChange={(e) => setO({ ...o, lines: +e.target.value })}><option value={1}>1 line</option><option value={2}>2 lines</option><option value={3}>3 lines</option></select>, max <NumInput type="number" min="1" max="10" step="0.5" value={o.maxDur} onChange={(e) => setO({ ...o, maxDur: +e.target.value })} /> s</Row>
       <StyleEditor style={style} onChange={setStyle} />
       <div className="st-actions"><button className="primary" disabled={!!p} onClick={go}>Generate Subtitles</button></div>
       <Progress p={p} />
@@ -86,12 +87,12 @@ export function StyleEditor({ style, onChange }) {
     <div className="st-style">
       <Row label="Style preset"><select value="" onChange={(e) => e.target.value && onChange({ ...style, ...CAPTION_PRESETS[e.target.value] })}><option value="">Apply a preset…</option>{Object.keys(CAPTION_PRESETS).map((k) => <option key={k}>{k}</option>)}</select></Row>
       <Row label="Animation"><select value={style.preset} onChange={up('preset')}>{CAPTION_STYLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Row>
-      <Row label="Size / weight"><input type="number" step="0.2" min="1" max="20" value={style.sizePct} onChange={up('sizePct')} />% <select value={style.weight} onChange={up('weight')}>{[400, 600, 700, 800, 900].map((w) => <option key={w}>{w}</option>)}</select></Row>
-      <Row label="Colors"><input type="color" value={style.color} onChange={up('color')} title="Text" /><input type="color" value={style.highlight} onChange={up('highlight')} title="Highlight" /><input type="color" value={style.stroke} onChange={up('stroke')} title="Outline" /><input type="number" step="0.1" min="0" max="3" value={style.strokePct} onChange={up('strokePct')} title="Outline width" /></Row>
-      <Row label="Position"><select value={style.position} onChange={up('position')}><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select> margin <input type="number" min="0" max="45" value={style.marginPct} onChange={up('marginPct')} />%</Row>
+      <Row label="Size / weight"><NumInput type="number" step="0.2" min="1" max="20" value={style.sizePct} onChange={up('sizePct')} />% <select value={style.weight} onChange={up('weight')}>{[400, 600, 700, 800, 900].map((w) => <option key={w}>{w}</option>)}</select></Row>
+      <Row label="Colors"><input type="color" value={style.color} onChange={up('color')} title="Text" /><input type="color" value={style.highlight} onChange={up('highlight')} title="Highlight" /><input type="color" value={style.stroke} onChange={up('stroke')} title="Outline" /><NumInput type="number" step="0.1" min="0" max="3" value={style.strokePct} onChange={up('strokePct')} title="Outline width" /></Row>
+      <Row label="Position"><select value={style.position} onChange={up('position')}><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select> margin <NumInput type="number" min="0" max="45" value={style.marginPct} onChange={up('marginPct')} />%</Row>
       <Row label="Options"><label><input type="checkbox" checked={style.box} onChange={up('box')} /> box</label> <label><input type="checkbox" checked={style.uppercase} onChange={up('uppercase')} /> UPPERCASE</label> <label><input type="checkbox" checked={style.shadow} onChange={up('shadow')} /> shadow</label></Row>
       <Row label="Keywords"><label><input type="checkbox" checked={!!style.emphasis} onChange={up('emphasis')} /> emphasize keyword</label> <input type="color" value={style.emphColor || '#ffd400'} onChange={up('emphColor')} title="Keyword colour" /> <label><input type="checkbox" checked={!!style.emoji} onChange={up('emoji')} /> auto emoji</label></Row>
-      <Row label="Chars per line"><input type="number" min="0" max="90" value={style.charsPerLine || 0} onChange={up('charsPerLine')} title="0 = by width; Thai lines always break between words" /> (0 = by width)</Row>
+      <Row label="Chars per line"><NumInput type="number" min="0" max="90" value={style.charsPerLine || 0} onChange={up('charsPerLine')} title="0 = by width; Thai lines always break between words" /> (0 = by width)</Row>
     </div>
   );
 }
@@ -161,7 +162,7 @@ function SettingsTab() {
       <div className="st-actions"><button onClick={pick}>Choose AudioStage.exe…</button><button onClick={pickDir}>Choose AudioStage folder…</button></div>
       <p className="st-help">Right-click an audio clip &gt; Edit in AudioStage (or Edit menu). The clip is rendered to WAV 48 kHz / 24-bit in “AudioStage Edits” next to the project; press Ctrl+S in AudioStage and the clip updates here.</p>
       <h5>Project</h5>
-      <Row label="Auto-save revision every"><input type="number" min="0" max="120" value={auto} onChange={(e) => { const v = Math.max(0, +e.target.value); setAuto(v); setPrefs({ autoSaveMin: v }); }} /> min (0 = off)</Row>
+      <Row label="Auto-save revision every"><NumInput type="number" min="0" max="120" value={auto} onChange={(e) => { const v = Math.max(0, +e.target.value); setAuto(v); setPrefs({ autoSaveMin: v }); }} /> min (0 = off)</Row>
       <h5>Remote desktop</h5>
       <Row label="Remote-Optimized Preview"><label><input type="checkbox" checked={!!remote} onChange={() => import('../Core/commands').then((m) => m.run('view.remoteMode'))} /> {remote ? 'on — preview 480–640 px, 8–15 fps, no UI animation' : 'off'}</label></Row>
     </div>

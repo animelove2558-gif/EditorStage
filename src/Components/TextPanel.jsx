@@ -1,6 +1,7 @@
 // Text panel > Transcript (Premiere's Text-Based Editing): read the sequence as text, select words to delete or move them
 // (the timeline ripples), remove filler words and silences, search, and turn the transcript into captions.
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import NumInput from './NumInput';
 import { useStore, set } from '../Core/store';
 import { shortcutKey } from '../Core/keys';
 import { MODELS, LANGUAGES, segmentWords, placeCaptions } from '../Services/ai/stt';
@@ -78,8 +79,8 @@ export default function TextPanel() {
         </>}
       </div>
       <div className="param">
-        <label>Silence below</label><input className="num" type="number" value={silence.db} onChange={(e) => setSilence({ ...silence, db: +e.target.value })} /><span className="dim">dB, longer than</span>
-        <input className="num" type="number" step="0.1" value={silence.min} onChange={(e) => setSilence({ ...silence, min: +e.target.value })} /><span className="dim">s</span>
+        <label>Silence below</label><NumInput className="num" type="number" value={silence.db} onChange={(e) => setSilence({ ...silence, db: +e.target.value })} /><span className="dim">dB, longer than</span>
+        <NumInput className="num" type="number" step="0.1" value={silence.min} onChange={(e) => setSilence({ ...silence, min: +e.target.value })} /><span className="dim">s</span>
         <button disabled={!sources.length} onClick={silences}>Remove Silences</button>
       </div>
       {err && <div className="err note">{err}</div>}

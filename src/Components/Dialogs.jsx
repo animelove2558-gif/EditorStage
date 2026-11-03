@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import NumInput from './NumInput';
 import { useStore, set, edit, getState, allSeqs } from '../Core/store';
 import { TOOLS } from '../Core/tools';
 import { MENUS } from '../Core/menus';
@@ -65,7 +66,7 @@ function SpeedDialog() {
   };
   return (
     <Modal title="Clip Speed / Duration" footer={<><button onClick={ok}>OK</button><button onClick={close}>Cancel</button></>}>
-      <Row label="Speed"><input type="number" min="1" max="10000" step="1" value={speed} onChange={(e) => onSpeed(+e.target.value)} /> %
+      <Row label="Speed"><NumInput type="number" min="1" max="10000" step="1" value={speed} onChange={(e) => onSpeed(+e.target.value)} /> %
         <button className={linked ? 'on' : ''} title="Link speed and duration" onClick={() => setLinked(!linked)}>{linked ? '🔗' : '⛓️‍💥'}</button></Row>
       <Row label="Duration"><TCInput value={dur} fps={fps} onChange={onDur} /></Row>
       <div className="mrow"><Check checked={reverse} onChange={setReverse}>Reverse Speed</Check></div>
@@ -101,7 +102,7 @@ function ExportFrameDialog() {
     <Modal title="Export Frame" footer={<><button disabled={busy} onClick={go}>{busy ? 'Rendering…' : 'OK'}</button><button onClick={close}>Cancel</button></>}>
       <Row label="Name"><input value={name} onChange={(e) => setName(e.target.value)} /></Row>
       <Row label="Format"><select value={fmt} onChange={(e) => setFmt(e.target.value)}><option value="png">PNG</option><option value="jpg">JPEG</option></select></Row>
-      {fmt === 'jpg' && <Row label="Quality"><input type="number" min="10" max="100" value={quality} onChange={(e) => setQuality(Math.min(100, Math.max(10, +e.target.value)))} /></Row>}
+      {fmt === 'jpg' && <Row label="Quality"><NumInput type="number" min="10" max="100" value={quality} onChange={(e) => setQuality(Math.min(100, Math.max(10, +e.target.value)))} /></Row>}
       <div className="mrow"><Check checked={imp} onChange={setImp}>Import into project</Check></div>
       <div className="dim">{seq.width}×{seq.height} at {toTC(s.playhead, seq.fps)}, rendered exactly like Export.</div>
       {err && <div className="err note">{err}</div>}
@@ -126,8 +127,8 @@ function SyntheticDialog({ type, mediaId }) {
   return (
     <Modal title={old ? `Modify ${T.name}` : `New ${T.name}`} footer={<><button onClick={ok}>OK</button><button onClick={close}>Cancel</button></>}>
       <Row label="Name"><input value={name} onChange={(e) => setName(e.target.value)} /></Row>
-      <Row label="Width"><input type="number" min="2" value={w} onChange={(e) => setW(+e.target.value)} /></Row>
-      <Row label="Height"><input type="number" min="2" value={h} onChange={(e) => setH(+e.target.value)} /></Row>
+      <Row label="Width"><NumInput type="number" min="2" value={w} onChange={(e) => setW(+e.target.value)} /></Row>
+      <Row label="Height"><NumInput type="number" min="2" value={h} onChange={(e) => setH(+e.target.value)} /></Row>
       {typ === 'color' && <Row label="Color"><input type="color" value={color} onChange={(e) => setColor(e.target.value)} /></Row>}
       {typ === 'countdown' && <>
         {cdc('wipeColor', 'Wipe Color')}{cdc('bgColor', 'Background Color')}{cdc('lineColor', 'Line Color')}{cdc('targetColor', 'Target Color')}{cdc('numeralColor', 'Numeral Color')}
@@ -158,9 +159,9 @@ function TrackObjectDialog({ clipId }) {
     <Modal title="Track Object (Point Tracker)" footer={<><button disabled={busy || !target} onClick={go}>{busy ? 'Tracking…' : 'Track'}</button><button onClick={() => { if (busy) import('../Services/tracking').then((m) => m.cancelTracking()); close(); }}>Cancel</button></>}>
       <Row label="Follower"><span>{F.name}</span></Row>
       <Row label="Track in"><select value={target} onChange={(e) => setTarget(e.target.value)}>{!cands.length && <option value="">(no video clip overlaps)</option>}{cands.map((c) => <option key={c.id} value={c.id}>{c.track} · {c.name}</option>)}</select></Row>
-      <Row label="Point X %"><input type="number" step="0.1" value={x} onChange={(e) => setX(+e.target.value)} /></Row>
-      <Row label="Point Y %"><input type="number" step="0.1" value={y} onChange={(e) => setY(+e.target.value)} /></Row>
-      <Row label="Search box %"><input type="number" min="3" max="80" value={box} onChange={(e) => setBox(Math.min(80, Math.max(3, +e.target.value)))} /></Row>
+      <Row label="Point X %"><NumInput type="number" step="0.1" value={x} onChange={(e) => setX(+e.target.value)} /></Row>
+      <Row label="Point Y %"><NumInput type="number" step="0.1" value={y} onChange={(e) => setY(+e.target.value)} /></Row>
+      <Row label="Search box %"><NumInput type="number" min="3" max="80" value={box} onChange={(e) => setBox(Math.min(80, Math.max(3, +e.target.value)))} /></Row>
       <Row label="Direction"><select value={dir} onChange={(e) => setDir(e.target.value)}><option value={0}>Both (from the playhead)</option><option value={1}>Forward</option><option value={-1}>Backward</option></select></Row>
       <div className="mrow"><Check checked={fs} onChange={setFs}>Follow scale</Check> <Check checked={fr} onChange={setFr}>Follow rotation</Check></div>
       <div className="dim">The point (in % of the frame) starts at the follower's Position. Motion keyframes are written, so the path can be edited or undone.</div>
@@ -184,7 +185,7 @@ function SceneDetectDialog() {
       <div className="mrow"><Check checked={cut} onChange={setCut}>Apply a cut at each detected cut point</Check></div>
       <div className="mrow"><Check checked={subs} onChange={setSubs}>Create a subclip for each detected cut point</Check></div>
       <div className="mrow"><Check checked={marks} onChange={setMarks}>Generate a marker at each detected cut point</Check></div>
-      <Row label="Threshold"><input type="number" min="1" max="100" value={th} onChange={(e) => setTh(Math.min(100, Math.max(1, +e.target.value)))} /></Row>
+      <Row label="Threshold"><NumInput type="number" min="1" max="100" value={th} onChange={(e) => setTh(Math.min(100, Math.max(1, +e.target.value)))} /></Row>
       <div className="dim">Lower threshold = more sensitive. Works on the selected video clips (linked audio is cut too).</div>
       {prog != null && <div className="mrow"><progress max="1" value={prog} style={{ flex: 1 }} /> {Math.round(prog * 100)}%</div>}
       {msg && <div className="err note">{msg}</div>}
@@ -240,7 +241,7 @@ function AudioGainDialog() {
   if (!c) return <Modal title="Audio Gain" footer={<button onClick={close}>OK</button>}>Select an audio clip first.</Modal>;
   return (
     <Modal title="Audio Gain" footer={<><button onClick={() => { edit('Audio Gain', ({ seq, sel }) => seq.clips.filter((x) => sel.includes(x.id)).forEach((x) => { x.audio = { ...x.audio, gain: g }; })); close(); }}>OK</button><button onClick={close}>Cancel</button></>}>
-      <Row label="Adjust Gain by (dB)"><input type="number" step="0.5" value={g} onChange={(e) => setG(+e.target.value)} /></Row>
+      <Row label="Adjust Gain by (dB)"><NumInput type="number" step="0.5" value={g} onChange={(e) => setG(+e.target.value)} /></Row>
     </Modal>
   );
 }
@@ -260,7 +261,7 @@ function SequenceFields({ v, setV, tracks }) {
   return <>
     <Row label="Name"><input value={v.name} onChange={p('name')} /></Row>
     <Row label="Preset"><select value="" onChange={(e) => { const x = SEQ_PRESETS[e.target.value]; if (x) setV({ ...v, width: x[0], height: x[1] }); }}><option value="">Choose a preset…</option>{Object.keys(SEQ_PRESETS).map((k) => <option key={k}>{k}</option>)}</select></Row>
-    <Row label="Frame size"><input type="number" value={v.width} onChange={p('width')} /> × <input type="number" value={v.height} onChange={p('height')} />
+    <Row label="Frame size"><NumInput type="number" value={v.width} onChange={p('width')} /> × <NumInput type="number" value={v.height} onChange={p('height')} />
       <button title="Swap width and height (horizontal ⇄ vertical)" onClick={() => setV({ ...v, width: v.height, height: v.width })}>⇄</button></Row>
     {+v.width > 0 && +v.height > 0 && (() => { const k = Math.min(200 / +v.width, 100 / +v.height); return (
       <div className="seq-preview"><div style={{ width: Math.round(+v.width * k), height: Math.round(+v.height * k) }} /><span>{+v.width}×{+v.height}<br />{aspectLabel(+v.width, +v.height)} · {+v.width > +v.height ? 'horizontal' : +v.width < +v.height ? 'vertical' : 'square'}</span></div>
@@ -268,7 +269,7 @@ function SequenceFields({ v, setV, tracks }) {
     <Row label="Frame rate"><select value={v.fps} onChange={p('fps', true)}>{FPS_LIST.map((f) => <option key={f} value={f}>{f} fps</option>)}</select></Row>
     <Row label="Pixel Aspect Ratio"><select value={v.par} onChange={p('par')}>{PARS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Row>
     <Row label="Audio Sample Rate"><select value={v.sampleRate} onChange={p('sampleRate', true)}><option value={48000}>48000 Hz</option><option value={44100}>44100 Hz</option></select></Row>
-    {tracks && <Row label="Tracks"><span>Video <input type="number" min="1" max="20" style={{ width: 48 }} value={v.vt} onChange={p('vt', true)} /> Audio <input type="number" min="1" max="20" style={{ width: 48 }} value={v.at} onChange={p('at', true)} /></span></Row>}
+    {tracks && <Row label="Tracks"><span>Video <NumInput type="number" min="1" max="20" style={{ width: 48 }} value={v.vt} onChange={p('vt', true)} /> Audio <NumInput type="number" min="1" max="20" style={{ width: 48 }} value={v.at} onChange={p('at', true)} /></span></Row>}
   </>;
 }
 function SequenceSettingsDialog() {
@@ -380,7 +381,7 @@ function MarkerDialog({ scope = 'seq', owner, id }) {
   return <Modal title={scope === 'seq' ? 'Marker' : 'Clip Marker'} footer={<><button onClick={ok}>OK</button><button onClick={del}>Delete</button><button onClick={close}>Cancel</button></>}>
     <Row label="Name"><input autoFocus value={v.name} onChange={p('name')} onKeyDown={(e) => e.key === 'Enter' && ok()} /></Row>
     <Row label="In"><span>{timecode(m.time, fps)}</span></Row>
-    <Row label="Duration (frames)"><input type="number" min="0" value={v.frames} onChange={p('frames')} /> <span className="dim">{timecode((+v.frames || 0) / fps, fps)}</span></Row>
+    <Row label="Duration (frames)"><NumInput type="number" min="0" value={v.frames} onChange={p('frames')} /> <span className="dim">{timecode((+v.frames || 0) / fps, fps)}</span></Row>
     <Row label="Comments"><textarea rows={3} value={v.comment} onChange={p('comment')} /></Row>
     <Row label="Marker Color"><span className="marker-colors">{MARKER_COLORS.map(([n, hex]) => <i key={hex} title={n} className={v.color === hex ? 'on' : ''} style={{ background: hex }} onClick={() => setV({ ...v, color: hex })} />)}</span></Row>
     <Row label="Marker Type"><select value={v.type} onChange={p('type')}>{MARKER_TYPES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Row>
@@ -391,7 +392,7 @@ function TransitionDurationDialog({ id }) {
   const [fr, setFr] = useState(Math.round((tr?.dur || 1) * fps));
   const ok = () => { const d = Math.max(1, +fr || 1) / fps; edit('Transition Duration', ({ seq: q }) => { const x = (q.transitions || []).find((t) => t.id === id); if (x) x.dur = d; }); close(); };
   return <Modal title="Set Transition Duration" footer={<><button onClick={ok}>OK</button><button onClick={close}>Cancel</button></>}>
-    <Row label="Duration (frames)"><input type="number" min="1" autoFocus value={fr} onChange={(e) => setFr(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ok()} /> <span className="dim">{((+fr || 0) / fps).toFixed(2)} s</span></Row></Modal>;
+    <Row label="Duration (frames)"><NumInput type="number" min="1" autoFocus value={fr} onChange={(e) => setFr(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ok()} /> <span className="dim">{((+fr || 0) / fps).toFixed(2)} s</span></Row></Modal>;
 }
 function ClipPropertiesDialog({ id, mediaId }) {
   const c = id ? getState().sequence.clips.find((x) => x.id === id) : null; const m = getState().media.find((x) => x.id === (mediaId || c?.mediaId));
@@ -494,7 +495,7 @@ function AboutDialog() {
 function PreferencesDialog() {
   useStore((s) => s.prefsRev); const p = getPrefs(); const [tab, setTab] = useState('General'); const [outs, setOuts] = useState([]);
   useEffect(() => { navigator.mediaDevices?.enumerateDevices?.().then((d) => setOuts(d.filter((x) => x.kind === 'audiooutput'))).catch(() => setOuts([])); }, []);
-  const num = (k, min, max, step = 1) => <input type="number" min={min} max={max} step={step} value={p[k]} onChange={(e) => e.target.value !== '' && setPrefs({ [k]: Math.max(min, Math.min(max, +e.target.value)) })} />;
+  const num = (k, min, max, step = 1) => <NumInput type="number" min={min} max={max} step={step} value={p[k]} onChange={(e) => e.target.value !== '' && setPrefs({ [k]: Math.max(min, Math.min(max, +e.target.value)) })} />;
   const sel = (k, opts) => <select value={p[k]} onChange={(e) => setPrefs({ [k]: e.target.value })}>{opts.map(([v, n]) => <option key={v} value={v}>{n}</option>)}</select>;
   const fps = getState().sequence.fps || 30;
   const TABS = ['General', 'Timeline', 'Audio', 'Auto Save', 'Appearance', 'Media'];
@@ -629,7 +630,7 @@ function ExportDialog() {
       <Row label="Format"><select value={preset} onChange={(e) => { setPreset(e.target.value); setPlatform(''); }}>{Object.keys(PRESETS).filter((k) => !PRESETS[k].hidden).map((k) => <option key={k}>{k}</option>)}</select></Row>
       {sw?.error && <Row label=""><span className="warn">{sw.error}</span></Row>}
       {sw?.note && <Row label=""><span className="dim">{sw.note}</span></Row>}
-      {!P.audioOnly && <Row label="Resolution"><input type="number" value={w} onChange={(e) => { setW(e.target.value); setPlatform(''); }} /> × <input type="number" value={h} onChange={(e) => { setH(e.target.value); setPlatform(''); }} /></Row>}
+      {!P.audioOnly && <Row label="Resolution"><NumInput type="number" value={w} onChange={(e) => { setW(e.target.value); setPlatform(''); }} /> × <NumInput type="number" value={h} onChange={(e) => { setH(e.target.value); setPlatform(''); }} /></Row>}
       {!P.audioOnly && aspectDiffers && <Row label="Source Scaling"><select value={fit} onChange={(e) => setFit(e.target.value)}>{FIT_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Row>}
       {!P.audioOnly && <Row label="Frame rate"><select value={fps} onChange={(e) => setFps(+e.target.value)}>{[23.976, 24, 25, 29.97, 30, 50, 59.94, 60].map((f) => <option key={f} value={f}>{f}</option>)}</select></Row>}
       {!P.audioOnly && P.codec && <Row label="Encoding"><select value={encoder} onChange={(e) => setEncoder(e.target.value)}>

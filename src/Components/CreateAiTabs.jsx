@@ -1,5 +1,6 @@
 // Create panel: Shorts (Long-to-Shorts) and B-Roll (Smart B-Roll) tabs.
 import React, { useMemo, useState } from 'react';
+import NumInput from './NumInput';
 import { useStore, set, switchSequence } from '../Core/store';
 import { analyzeMoments, rankMoments, createShorts, cancelShorts, momentTitle, FEATURES, DEFAULT_WEIGHTS } from '../Services/ai/shorts';
 import { indexMedia, cancelIndex, suggestBRoll, placeBRoll } from '../Services/ai/broll';
@@ -49,8 +50,8 @@ export function ShortsTab() {
   return <div className="shorts">
     <p className="dim">Finds the best moments of this sequence ({fmt(Math.max(0, ...seq.clips.map((c) => c.start + c.dur), 0))}) and makes a vertical sequence of each one with Auto-Reframe, captions and the silences cut.</p>
     <TranscriptRow busy={busy} setBusy={setBusy} />
-    <Row label="Length"><input type="number" min="5" max="180" value={o.minLen} onChange={(e) => setO({ ...o, minLen: +e.target.value })} /> – <input type="number" min="5" max="180" value={o.maxLen} onChange={(e) => setO({ ...o, maxLen: +e.target.value })} /> s</Row>
-    <Row label="Shorts"><input type="number" min="1" max="20" value={o.count} onChange={(e) => setO({ ...o, count: Math.max(1, +e.target.value) })} /></Row>
+    <Row label="Length"><NumInput type="number" min="5" max="180" value={o.minLen} onChange={(e) => setO({ ...o, minLen: +e.target.value })} /> – <NumInput type="number" min="5" max="180" value={o.maxLen} onChange={(e) => setO({ ...o, maxLen: +e.target.value })} /> s</Row>
+    <Row label="Shorts"><NumInput type="number" min="1" max="20" value={o.count} onChange={(e) => setO({ ...o, count: Math.max(1, +e.target.value) })} /></Row>
     <Row label="Scene changes" hint="Detect cuts inside the video with FFmpeg (slower on long files)"><input type="checkbox" checked={o.scenes} onChange={(e) => setO({ ...o, scenes: e.target.checked })} /></Row>
     <div className="st-actions"><button className="primary" disabled={busy} onClick={find}>Find Moments</button></div>
     <Progress p={p} onCancel={cancelShorts} />
@@ -63,7 +64,7 @@ export function ShortsTab() {
         <div className="short-main">
           <div><b>{i + 1}. {momentTitle(m)}</b></div>
           <div className="short-meta"><span className="short-score" title="Score"><i style={{ width: `${m.score}%` }} />{m.score}</span>
-            <input type="number" step="0.1" value={m.t0} onChange={(e) => patch(m, { t0: Math.max(0, +e.target.value) })} /> → <input type="number" step="0.1" value={m.t1} onChange={(e) => patch(m, { t1: Math.max(m.t0 + 1, +e.target.value) })} />
+            <NumInput type="number" step="0.1" value={m.t0} onChange={(e) => patch(m, { t0: Math.max(0, +e.target.value) })} /> → <NumInput type="number" step="0.1" value={m.t1} onChange={(e) => patch(m, { t1: Math.max(m.t0 + 1, +e.target.value) })} />
             <span className="dim">{(m.t1 - m.t0).toFixed(1)} s</span>
             <button title="Go to the start" onClick={() => set({ playhead: m.t0 })}>▶</button></div>
           <div className="dim short-why">{FEATURES.map(([f, l]) => `${l} ${Math.round((m.norm?.[f] || 0) * 100)}`).join(' · ')}</div>

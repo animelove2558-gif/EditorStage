@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import NumInput from './NumInput';
 import { useStore, set, edit, getState, undo, redo, switchSequence, deleteHistoryFrom } from '../Core/store';
 import { getPrefs } from '../Core/prefs';
 import { run, addMediaToTimeline, LABELS } from '../Core/commands';
@@ -163,7 +164,7 @@ function Fader({ value, onChange, label }) {
   const v = +(value || 0);
   return <div className="fader">
     <input type="range" orient="vertical" min="-60" max="15" step="0.1" value={v} title={`${label}: ${v.toFixed(1)} dB (double-click = 0 dB)`} onChange={(e) => onChange(+e.target.value)} onDoubleClick={() => onChange(0)} />
-    <input className="db-box" type="number" step="0.1" min="-60" max="15" value={+v.toFixed(1)} onChange={(e) => e.target.value !== '' && onChange(Math.max(-60, Math.min(15, +e.target.value)))} />
+    <NumInput className="db-box" type="number" step="0.1" min="-60" max="15" value={+v.toFixed(1)} onChange={(e) => e.target.value !== '' && onChange(Math.max(-60, Math.min(15, +e.target.value)))} />
   </div>;
 }
 /** pan knob as a horizontal slider -100 (L) .. 100 (R), double-click = centre */

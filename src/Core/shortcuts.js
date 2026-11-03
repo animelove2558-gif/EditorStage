@@ -1,7 +1,7 @@
 import { TOOLS, selectTool } from './tools';
 import { set, getState } from './store';
 import { run } from './commands';
-import { shortcutKey } from './keys';
+import { shortcutKey, keyBelongsToField } from './keys';
 import { trimKey } from './trimMode';
 
 export const combos = {
@@ -77,7 +77,8 @@ export function comboOf(e) {
 export function installShortcuts() {
   loadKeymap();
   const onKey = (e) => {
-    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable) return;
+    // text fields keep their keys; after clicking a checkbox / slider / button the shortcuts still work (Premiere)
+    if (keyBelongsToField(e.target, e)) return;
     if (getState().dialog) return;
     const k = shortcutKey(e);
     const mod = comboOf(e) || k;

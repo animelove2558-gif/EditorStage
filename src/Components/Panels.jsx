@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import NumInput from './NumInput';
 import { DUCK_DEFAULTS, generateDucking } from '../Services/ducking';
 import Timeline, { timecode } from './Timeline';
 import { markerColor } from '../Core/markers';
@@ -498,7 +499,7 @@ function GraphicEditor({ clip }) {
       {isText && <>
         <textarea rows="3" style={{ width: '100%' }} value={g.text} onChange={(e) => up({ text: e.target.value })} />
         <div className="param"><label>Font</label><FontPicker value={g.font} onChange={(f) => up({ font: f })} /></div>
-        <div className="param"><label>Size</label><input type="range" min="8" max="400" value={g.size} onChange={(e) => up({ size: +e.target.value })} /><input className="num" type="number" value={g.size} onChange={(e) => up({ size: +e.target.value })} /></div>
+        <div className="param"><label>Size</label><input type="range" min="8" max="400" value={g.size} onChange={(e) => up({ size: +e.target.value })} /><NumInput className="num" type="number" value={g.size} onChange={(e) => up({ size: +e.target.value })} /></div>
         <div className="param"><label>Style</label><button className={g.bold ? 'active' : ''} onClick={() => up({ bold: !g.bold })}>B</button><button className={g.italic ? 'active' : ''} onClick={() => up({ italic: !g.italic })}>I</button>{['left', 'center', 'right'].map((a) => <button key={a} className={g.align === a ? 'active' : ''} onClick={() => up({ align: a })}>{a[0].toUpperCase()}</button>)}</div>
       </>}
       {!isText && <>
@@ -507,9 +508,9 @@ function GraphicEditor({ clip }) {
         {g.type === 'rect' && <div className="param"><label>Corner radius</label><input type="range" min="0" max="200" value={g.radius} onChange={(e) => up({ radius: +e.target.value })} /></div>}
         {g.type === 'polygon' && <div className="param"><label>Sides</label><input type="range" min="3" max="12" value={g.sides} onChange={(e) => up({ sides: +e.target.value })} /></div>}
       </>}
-      <div className="param"><label>Position X / Y</label><input className="num" type="number" step="0.01" value={+g.x.toFixed(3)} onChange={(e) => up({ x: +e.target.value })} /><input className="num" type="number" step="0.01" value={+g.y.toFixed(3)} onChange={(e) => up({ y: +e.target.value })} /></div>
+      <div className="param"><label>Position X / Y</label><NumInput className="num" type="number" step="0.01" value={+g.x.toFixed(3)} onChange={(e) => up({ x: +e.target.value })} /><NumInput className="num" type="number" step="0.01" value={+g.y.toFixed(3)} onChange={(e) => up({ y: +e.target.value })} /></div>
       <div className="param"><label>Fill</label><input type="color" value={g.color} onChange={(e) => up({ color: e.target.value })} /></div>
-      <div className="param"><label>Stroke</label><input type="checkbox" checked={g.stroke} onChange={(e) => up({ stroke: e.target.checked })} /><input type="color" value={g.strokeColor} onChange={(e) => up({ strokeColor: e.target.value })} /><input className="num" type="number" value={g.strokeW} onChange={(e) => up({ strokeW: +e.target.value })} /></div>
+      <div className="param"><label>Stroke</label><input type="checkbox" checked={g.stroke} onChange={(e) => up({ stroke: e.target.checked })} /><input type="color" value={g.strokeColor} onChange={(e) => up({ strokeColor: e.target.value })} /><NumInput className="num" type="number" value={g.strokeW} onChange={(e) => up({ strokeW: +e.target.value })} /></div>
       {isText && <><div className="param"><label>Shadow</label><input type="checkbox" checked={g.shadow} onChange={(e) => up({ shadow: e.target.checked })} /></div><div className="param"><label>Background</label><input type="checkbox" checked={g.bg} onChange={(e) => up({ bg: e.target.checked })} /><input type="color" value={g.bgColor} onChange={(e) => up({ bgColor: e.target.value })} /></div></>}
     </div>
   );

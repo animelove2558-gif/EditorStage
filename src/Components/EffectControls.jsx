@@ -1,4 +1,5 @@
 import React from 'react';
+import NumInput from './NumInput';
 import { useStore, set, edit, getState } from '../Core/store';
 import { evalParam, writeParam, toggleAnimation, hasKeyAt, keyAt, neighborKey, toggleKeyAt, setKeyInterp, INTERPS, DEFAULT_MOTION, DEFAULT_OPACITY, DEFAULT_VOLUME, DEFAULT_TIMEREMAP } from '../Core/params';
 import { VIDEO_FX, LUMETRI_DEFAULTS } from '../Renderers/fx/videoEffects';
@@ -84,11 +85,11 @@ function ParamRow({ def, p, local, dims, dynTracks, dynImages, onWrite, onToggle
       <label title={def.label}>{def.label}</label>
       {def.type === 'slider' && <>
         <input type="range" min={def.min} max={def.max} step={def.step ?? 1} value={cur ?? 0} onChange={(e) => onWrite(+e.target.value)} />
-        <input className="num" type="number" step={def.step ?? 1} value={Number.isFinite(cur) ? +(+cur).toFixed(3) : 0} onChange={(e) => onWrite(+e.target.value)} />
+        <NumInput className="num" type="number" step={def.step ?? 1} value={Number.isFinite(cur) ? +(+cur).toFixed(3) : 0} onChange={(e) => onWrite(+e.target.value)} />
       </>}
       {def.type === 'point' && <>
-        <input className="num" type="number" value={Math.round(cur[0] * dims.w)} onChange={(e) => onWrite([+e.target.value / dims.w, cur[1]])} />
-        <input className="num" type="number" value={Math.round(cur[1] * dims.h)} onChange={(e) => onWrite([cur[0], +e.target.value / dims.h])} />
+        <NumInput className="num" type="number" value={Math.round(cur[0] * dims.w)} onChange={(e) => onWrite([+e.target.value / dims.w, cur[1]])} />
+        <NumInput className="num" type="number" value={Math.round(cur[1] * dims.h)} onChange={(e) => onWrite([cur[0], +e.target.value / dims.h])} />
       </>}
       {def.type === 'select' && <select value={cur} onChange={(e) => onWrite(def.byName ? e.target.value : +e.target.value)}>
         {def.options.map((o, i) => <option key={o} value={def.byName ? o : i}>{o}</option>)}
@@ -334,11 +335,11 @@ function TransitionParams({ tr, upd }) {
   const val = (q) => tr.params?.[q.id] ?? q.def;
   const put = (q, v) => upd(`Transition ${q.label}`, (x) => { x.params = { ...(x.params || {}), [q.id]: v }; });
   return <>{def.params.map((q) => <div key={q.id} className="param"><label>{q.label}</label>
-    {q.type === 'slider' && <><input type="range" min={q.min} max={q.max} step={q.step} value={val(q)} onChange={(e) => put(q, +e.target.value)} /><input className="num" type="number" step={q.step} value={val(q)} onChange={(e) => put(q, +e.target.value)} /></>}
+    {q.type === 'slider' && <><input type="range" min={q.min} max={q.max} step={q.step} value={val(q)} onChange={(e) => put(q, +e.target.value)} /><NumInput className="num" type="number" step={q.step} value={val(q)} onChange={(e) => put(q, +e.target.value)} /></>}
     {q.type === 'select' && <select value={val(q)} onChange={(e) => put(q, +e.target.value)}>{q.options.map((o, i) => <option key={o} value={i}>{o}</option>)}</select>}
     {q.type === 'checkbox' && <input type="checkbox" checked={!!val(q)} onChange={(e) => put(q, e.target.checked)} />}
     {q.type === 'color' && <input type="color" value={val(q)} onChange={(e) => put(q, e.target.value)} />}
-    {q.type === 'point' && <><input className="num" type="number" step="0.01" value={val(q)[0]} onChange={(e) => put(q, [+e.target.value, val(q)[1]])} /><input className="num" type="number" step="0.01" value={val(q)[1]} onChange={(e) => put(q, [val(q)[0], +e.target.value])} /></>}
+    {q.type === 'point' && <><NumInput className="num" type="number" step="0.01" value={val(q)[0]} onChange={(e) => put(q, [+e.target.value, val(q)[1]])} /><NumInput className="num" type="number" step="0.01" value={val(q)[1]} onChange={(e) => put(q, [val(q)[0], +e.target.value])} /></>}
   </div>)}
   <div className="param"><label /><button onClick={() => upd('Reset Transition', (x) => { delete x.params; })}>Reset parameters</button></div></>;
 }
@@ -348,7 +349,7 @@ function TransitionPanel({ tr }) {
     <div className="panel-pad ec">
       <h4>Transition: {tr.name}</h4>
       {APPROX_TRANSITIONS.has(tr.name) && <div className="dim note">Approximated look (no true 3D / optical-flow)</div>}
-      <div className="param"><label>Duration (s)</label><input type="range" min="0.1" max="5" step="0.05" value={tr.dur} onChange={(e) => upd('Transition Duration', (x) => { x.dur = +e.target.value; })} /><input className="num" type="number" step="0.05" value={tr.dur} onChange={(e) => upd('Transition Duration', (x) => { x.dur = Math.max(0.1, +e.target.value); })} /></div>
+      <div className="param"><label>Duration (s)</label><input type="range" min="0.1" max="5" step="0.05" value={tr.dur} onChange={(e) => upd('Transition Duration', (x) => { x.dur = +e.target.value; })} /><NumInput className="num" type="number" step="0.05" value={tr.dur} onChange={(e) => upd('Transition Duration', (x) => { x.dur = Math.max(0.1, +e.target.value); })} /></div>
       {tr.name === 'Morph Cut' && <MorphBar tr={tr} />}
       <TransitionParams tr={tr} upd={upd} />
       <div className="param"><label>Reverse</label><input type="checkbox" checked={!!tr.reverse} onChange={(e) => upd('Transition Reverse', (x) => { x.reverse = e.target.checked; })} /></div>
@@ -419,7 +420,7 @@ export function Lumetri() {
   const slider = ([k, label, min, max, step]) => (
     <div className="param" key={k}><label>{label}</label>
       <input type="range" min={min} max={max} step={step || 1} value={l[k]} onChange={(e) => setL(k, +e.target.value)} onDoubleClick={() => setL(k, LUMETRI_DEFAULTS[k])} />
-      <input className="num" type="number" step={step || 1} value={l[k]} onChange={(e) => setL(k, +e.target.value)} /></div>
+      <NumInput className="num" type="number" step={step || 1} value={l[k]} onChange={(e) => setL(k, +e.target.value)} /></div>
   );
   const browse = async (key = 'lut') => {
     const [p] = await window.editorstage.openDialog('lut'); if (!p) return;

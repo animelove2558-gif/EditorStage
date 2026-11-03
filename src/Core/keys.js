@@ -26,3 +26,24 @@ export function shortcutKey(e) {
   if (ascii || (key.length > 1 && key !== 'Unidentified' && key !== 'Process' && key !== 'Dead')) return key.toLowerCase();
   return codeKey(e.code) ?? key.toLowerCase();
 }
+
+// input types where the keyboard types text: the field keeps every key
+const TEXT_INPUTS = new Set(['', 'text', 'number', 'search', 'email', 'password', 'url', 'tel', 'date', 'time', 'datetime-local', 'month', 'week']);
+const ARROWS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
+/**
+ * True when a key press belongs to the focused form control and must not run an app shortcut: text fields, text areas,
+ * editable text and drop-down lists keep their keys; a slider keeps only its arrow keys and a radio group its arrows.
+ * Checkboxes, buttons, colour swatches and sliders otherwise let shortcuts through (Space plays after clicking a checkbox).
+ */
+export function keyBelongsToField(target, e) {
+  if (!target) return false;
+  if (target.isContentEditable) return true;
+  const tag = String(target.tagName || '').toUpperCase();
+  if (tag === 'TEXTAREA') return true;
+  if (tag === 'SELECT') return !(e.ctrlKey || e.metaKey);
+  if (tag !== 'INPUT') return false;
+  const type = String(target.type ?? target.getAttribute?.('type') ?? '').toLowerCase();
+  if (TEXT_INPUTS.has(type)) return true;
+  if (type === 'range' || type === 'radio') return ARROWS.has(e.key);
+  return false;
+}

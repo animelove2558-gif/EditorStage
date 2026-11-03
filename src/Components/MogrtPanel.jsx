@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import NumInput from './NumInput';
 import { useStore, set, edit, getState } from '../Core/store';
 import { run } from '../Core/commands';
 import FontPicker from './FontPicker';
@@ -103,11 +104,11 @@ function Control({ c, clip, entry, depth = 0 }) {
   );
 
   if (c.type === 'checkbox') return <div className="param" style={pad}>{head}<input type="checkbox" checked={!!cur} onChange={(e) => write(e.target.checked)} />{tail}</div>;
-  if (c.type === 'slider') return <div className="param" style={pad}>{head}<input type="range" min={c.min} max={c.max} step={Math.abs(c.max - c.min) <= 10 ? 0.01 : 1} value={cur} onChange={(e) => write(+e.target.value)} /><input className="num" type="number" value={+(+cur).toFixed(3)} onChange={(e) => write(+e.target.value)} />{tail}</div>;
+  if (c.type === 'slider') return <div className="param" style={pad}>{head}<input type="range" min={c.min} max={c.max} step={Math.abs(c.max - c.min) <= 10 ? 0.01 : 1} value={cur} onChange={(e) => write(+e.target.value)} /><NumInput className="num" type="number" value={+(+cur).toFixed(3)} onChange={(e) => write(+e.target.value)} />{tail}</div>;
   if (c.type === 'color') return <div className="param" style={pad}>{head}<input type="color" value={toHex(cur)} onChange={(e) => write(fromHex(e.target.value, cur[3] ?? 1))} />{tail}</div>;
-  if (c.type === 'point') return <div className="param" style={pad}>{head}<input className="num" type="number" value={Math.round(cur[0])} onChange={(e) => write([+e.target.value, cur[1]])} /><input className="num" type="number" value={Math.round(cur[1])} onChange={(e) => write([cur[0], +e.target.value])} />{tail}</div>;
-  if (c.type === 'point3d') return <div className="param" style={pad}>{head}{[0, 1, 2].map((i) => <input key={i} className="num" type="number" value={Math.round(cur?.[i] ?? 0)} onChange={(e) => { const v = [...(cur || [0, 0, 0])]; v[i] = +e.target.value; write(v); }} />)}{tail}</div>;
-  if (c.type === 'angle') return <div className="param" style={pad}>{head}<input type="range" min={-360} max={360} step={1} value={cur} onChange={(e) => write(+e.target.value)} /><input className="num" type="number" value={+(+cur).toFixed(1)} onChange={(e) => write(+e.target.value)} /><span className="dim">°</span>{tail}</div>;
+  if (c.type === 'point') return <div className="param" style={pad}>{head}<NumInput className="num" type="number" value={Math.round(cur[0])} onChange={(e) => write([+e.target.value, cur[1]])} /><NumInput className="num" type="number" value={Math.round(cur[1])} onChange={(e) => write([cur[0], +e.target.value])} />{tail}</div>;
+  if (c.type === 'point3d') return <div className="param" style={pad}>{head}{[0, 1, 2].map((i) => <NumInput key={i} className="num" type="number" value={Math.round(cur?.[i] ?? 0)} onChange={(e) => { const v = [...(cur || [0, 0, 0])]; v[i] = +e.target.value; write(v); }} />)}{tail}</div>;
+  if (c.type === 'angle') return <div className="param" style={pad}>{head}<input type="range" min={-360} max={360} step={1} value={cur} onChange={(e) => write(+e.target.value)} /><NumInput className="num" type="number" value={+(+cur).toFixed(1)} onChange={(e) => write(+e.target.value)} /><span className="dim">°</span>{tail}</div>;
   if (c.type === 'dropdown') {
     const items = c.items?.length ? c.items : (getPrepared(clip.mogrt.libId)?.scene.comps.flatMap((k) => k.essentialControllers || []).find((k) => k.uuid === c.id)?.dropdownItems || []);
     return <div className="param" style={pad}>{head}<select value={cur} onChange={(e) => write(+e.target.value)}>{(items.length ? items : ['1']).map((it, i) => <option key={i} value={i + 1}>{it}</option>)}</select>{tail}</div>;
@@ -122,7 +123,7 @@ function Control({ c, clip, entry, depth = 0 }) {
         {(f.capPropFontEdit || f.capPropFontSizeEdit || f.capPropFontFauxStyleEdit) && (
           <div className="param">
             {f.capPropFontEdit && <FontPicker placeholder="(template font)" width={180} value={(isObj && cur.fontFamily) || f.fontEditValue || ''} onChange={(fam) => upd({ fontFamily: fam })} />}
-            {f.capPropFontSizeEdit && <input className="num" title="Size" type="number" value={(isObj && cur.fontSize) || f.fontSizeEditValue || 40} onChange={(e) => upd({ fontSize: +e.target.value })} />}
+            {f.capPropFontSizeEdit && <NumInput className="num" title="Size" type="number" value={(isObj && cur.fontSize) || f.fontSizeEditValue || 40} onChange={(e) => upd({ fontSize: +e.target.value })} />}
             {f.capPropFontFauxStyleEdit && ['B', 'I', 'U', 'TT'].map((k, i) => { const key = ['fauxBold', 'fauxItalic', 'underline', 'allCaps'][i]; return <button key={k} className={isObj && cur[key] ? 'active' : ''} onClick={() => upd({ [key]: !(isObj && cur[key]) })}>{k}</button>; })}
           </div>
         )}

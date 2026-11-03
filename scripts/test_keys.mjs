@@ -1,5 +1,5 @@
 // Shortcut keys on non-Latin keyboard layouts. Run: node scripts/test_keys.mjs
-import { shortcutKey, codeKey } from '../src/Core/keys.js';
+import { shortcutKey, codeKey, keyBelongsToField } from '../src/Core/keys.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => { if (cond) pass++; else { fail++; console.log('FAIL', name, extra); } };
@@ -38,6 +38,23 @@ ok('Shift+letter keeps the letter', ks('M', 'KeyM') === 'm' && ks('A', 'KeyQ') =
 ok('Shift+named key unchanged', ks('Delete', 'Delete') === 'delete' && ks('ArrowLeft', 'ArrowLeft') === 'arrowleft');
 // unknown physical key falls back to e.key
 ok('unknown code', codeKey('NumpadAdd') === null && k('+', 'NumpadAdd') === '+');
+
+// E13: which focused controls keep their keys
+{
+  const I = (type) => ({ tagName: 'INPUT', type });
+  const key = (k, o = {}) => ({ key: k, ...o });
+  ok('text field keeps Space', keyBelongsToField(I('text'), key(' ')));
+  ok('number field keeps J', keyBelongsToField(I('number'), key('j')));
+  ok('textarea keeps keys', keyBelongsToField({ tagName: 'TEXTAREA' }, key('k')));
+  ok('editable text keeps keys', keyBelongsToField({ tagName: 'DIV', isContentEditable: true }, key('l')));
+  ok('checkbox lets Space through', !keyBelongsToField(I('checkbox'), key(' ')));
+  ok('checkbox lets Ctrl+Z through', !keyBelongsToField(I('checkbox'), key('z', { ctrlKey: true })));
+  ok('slider lets J / K / L through', !keyBelongsToField(I('range'), key('j')) && !keyBelongsToField(I('range'), key('l')));
+  ok('slider keeps its arrow keys', keyBelongsToField(I('range'), key('ArrowLeft')) && keyBelongsToField(I('range'), key('Home')));
+  ok('colour swatch / button let keys through', !keyBelongsToField(I('color'), key(' ')) && !keyBelongsToField({ tagName: 'BUTTON' }, key(' ')));
+  ok('drop-down keeps letters, not Ctrl shortcuts', keyBelongsToField({ tagName: 'SELECT' }, key('a')) && !keyBelongsToField({ tagName: 'SELECT' }, key('z', { ctrlKey: true })));
+  ok('the timeline (no field) lets keys through', !keyBelongsToField({ tagName: 'DIV' }, key(' ')) && !keyBelongsToField(null, key(' ')));
+}
 
 console.log(`keys: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
