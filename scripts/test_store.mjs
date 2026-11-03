@@ -110,6 +110,10 @@ S.markSaved(); S.set({ inPoint: 1 });
 ok('setting In makes it unsaved (In / Out are saved)', st().dirty === true);
 S.markSaved(); S.set({ projectName: 'Renamed' });
 ok('renaming the project makes it unsaved', st().dirty === true);
+S.set({ dirty: false });
+ok('set({ dirty: false }) treats the current content as saved', st().dirty === false);
+S.set({ dirty: true });
+ok('set({ dirty: true }) marks the project unsaved', st().dirty === true);
 
 console.log(`store: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

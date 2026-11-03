@@ -26,7 +26,7 @@ export async function renderPreview(mode, cancel = () => false) {
     const [a, b] = ranges[i];
     set({ renderProgress: { text: `Rendering ${mode === 'audio' ? 'audio' : 'video'} ${i + 1}/${ranges.length}`, p: 0 } });
     if (mode === 'audio') {
-      const pcm = await renderAudioMix(structuredClone({ ...st, log: [] }), a, b); const path = `${tmp}${sp}es-apreview-${hash}-${i}.wav`;
+      const pcm = await renderAudioMix(structuredClone({ ...st, log: [], dialog: null }), a, b); const path = `${tmp}${sp}es-apreview-${hash}-${i}.wav`;
       await window.editorstage.writeFile(path, wavBytesFromPcm(pcm)); made.push({ kind: 'audio', start: a, end: b, path, hash });
     } else {
       const path = `${tmp}${sp}es-preview-${hash}-${i}.mp4`;

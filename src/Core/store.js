@@ -78,8 +78,11 @@ export const useStore = (sel = (s) => s) => useSyncExternalStore(subscribe, () =
 // project fields that are saved in the .esproj but changed without an undo step: changing one makes the project unsaved
 const SAVED_FIELDS = ['bins', 'projectName', 'scratch', 'inPoint', 'outPoint'];
 export function set(patch) {
-  const next = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+  const p = typeof patch === 'function' ? patch(state) : patch;
+  const next = { ...state, ...p };
   if (SAVED_FIELDS.some((k) => next[k] !== state[k])) forced++;
+  // an explicit dirty in the patch wins: false = treat the current content as saved, true = needs saving
+  if (p && 'dirty' in p) { if (p.dirty) forced++; else { savedRev = curRev; savedForced = forced; } }
   state = next; syncDirty();
   emit();
 }

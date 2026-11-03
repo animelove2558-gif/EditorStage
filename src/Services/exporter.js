@@ -343,7 +343,7 @@ export async function exportSequence(opts, onProgress, cancel) {
 }
 async function renderExport(opts, onProgress, cancel) {
   const es = window.editorstage; const P = PRESETS[opts.preset]; const id = opts.jobId || `export-${uid()}`; const notes = [];
-  let state = opts.state || structuredClone({ ...getState(), log: [] });
+  let state = opts.state || structuredClone({ ...getState(), log: [], dialog: null });
   const dur = opts.end - opts.start; if (dur <= 0) return { ok: false, error: 'Empty range' };
   // captions as a sidecar file (times relative to the exported range) and / or not burnt into the picture
   const capTrack = state.sequence.tracks.find((t) => t.kind === 'caption' && state.sequence.clips.some((c) => c.track === t.id && c.caption));
@@ -445,7 +445,7 @@ async function renderExport(opts, onProgress, cancel) {
 export const wavBytesFromPcm = (pcm) => wavBytes(pcm);
 /** Render one sequence frame exactly like Export (same seeking and compositor). Returns ImageData (top row first). */
 export async function renderFrame(t, w, h) {
-  const state = structuredClone({ ...getState(), log: [] });
+  const state = structuredClone({ ...getState(), log: [], dialog: null });
   const canvas = document.createElement('canvas'); const comp = new Compositor(canvas); comp.resize(w, h);
   const gl = comp.gl; const px = new Uint8Array(w * h * 4);
   lockPlayback(true);

@@ -91,7 +91,7 @@ export async function runHealthCheck(opts = {}) {
   // the mix: clipping and loudness
   if (opts.audio !== false && seq.clips.some((c) => c.mediaId && st.media.find((m) => m.id === c.mediaId)?.hasAudio)) {
     say('Mixing audio…');
-    const pcm = await renderAudioMix(structuredClone({ ...st, log: [] }), 0, end);
+    const pcm = await renderAudioMix(structuredClone({ ...st, log: [], dialog: null }), 0, end);
     let clips = 0; const where = []; let lastT = -1;
     for (let i = 0; i < pcm.length; i++) if (pcm[i] >= 32766 || pcm[i] <= -32767) { clips++; const t = Math.floor(i / 2) / (pcm.sampleRate || 48000); if (t - lastT > 1) { where.push(t); lastT = t; } }
     if (clips > 0) out.push({ id: 'clip', level: 'warning', title: `Audio clipping (${clips} samples at full scale)`, detail: `First at ${tc(where[0], fps)}${where.length > 1 ? ` and ${where.length - 1} more place(s)` : ''}. Lower the clip / track volume or use Loudness Normalization on export.`, at: where[0] });
