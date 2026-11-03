@@ -19,7 +19,7 @@ const ok = (name, cond, extra = '') => { if (cond) pass++; else { fail++; consol
 const st = () => S.getState();
 const opacity = () => st().sequence.opacity ?? 0;
 const setOpacity = (v) => S.edit('Opacity', ({ seq }) => { seq.opacity = v; }, { coalesce: 'opacity' });
-const fresh = () => { S.loadProject({ sequence: { ...st().sequence, opacity: 0 } }, 'C:/p.esproj'); };
+const fresh = () => { S.loadProject({ sequence: { ...st().sequence, id: 'seq1', opacity: 0 } }, 'C:/p.esproj'); };
 
 // ---- E1: undo / redo change the saved state ----
 fresh();
@@ -87,6 +87,76 @@ S.undo();
 ok('Undo after the switch changes nothing', st().sequence === before);
 S.edit('C', ({ seq }) => { seq.c = 1; });
 ok('a new edit in the opened sequence is step 1', st().history.length === 2 && st().historyIndex === 1);
+
+// ---- D13: each sequence keeps its own History across switches ----
+const two = () => { fresh(); S.addSequence({ id: 'sq2', name: 'Short', tracks: [], clips: [], transitions: [], markers: [] }); S.set({ media: [{ id: 'm1', name: 'one' }, { id: 'm2', name: 'two' }] }); S.markSaved(); };
+const rename = (id, n) => S.edit('Rename', ({ media }) => { media.find((m) => m.id === id).name = n; });
+const nameOf = (id) => st().media.find((m) => m.id === id)?.name;
+two();
+const main = st().sequence.id;
+S.edit('A', ({ seq }) => { seq.a = 1; });
+S.switchSequence('sq2'); S.edit('C', ({ seq }) => { seq.c = 1; });
+S.switchSequence(main);
+ok('switching back keeps the History of the first sequence', st().history.length === 2 && st().history[1].label === 'A' && st().historyIndex === 1, JSON.stringify(st().history));
+S.undo();
+ok('...and its step can still be undone', st().sequence.a === undefined);
+S.switchSequence('sq2');
+ok('the other sequence kept its own History and edit', st().history.length === 2 && st().history[1].label === 'C' && st().sequence.c === 1);
+S.undo();
+ok('...undone there separately', st().sequence.c === undefined);
+ok('both sequences back to their saved state: clean', st().dirty === false);
+S.redo(); S.switchSequence(main); S.redo();
+ok('redo works per sequence too', st().sequence.a === 1 && st().seqs.sq2.c === 1);
+
+two();
+rename('m1', 'uno');
+S.switchSequence('sq2'); rename('m2', 'dos');
+S.switchSequence(main); S.undo();
+ok('undoing a media change in one sequence keeps a later media change made in another', nameOf('m1') === 'one' && nameOf('m2') === 'dos');
+ok('...and the project is still unsaved (the other change was never saved)', st().dirty === true);
+S.switchSequence('sq2'); S.undo();
+ok('undoing the other one too: clean', nameOf('m2') === 'two' && st().dirty === false);
+S.redo();
+ok('redo of a media change', nameOf('m2') === 'dos');
+
+two();
+S.edit('Add', ({ media }) => { media.push({ id: 'm3', name: 'three' }); });
+ok('an added media item is a step', st().media.length === 3);
+S.edit('Remove', ({ media }) => { media.splice(0, 1); });
+S.undo();
+ok('undo a removal puts the item back in its place', st().media.map((m) => m.id).join() === 'm1,m2,m3');
+S.undo();
+ok('undo an addition removes it', st().media.map((m) => m.id).join() === 'm1,m2' && st().dirty === false);
+const ml = st().media; S.edit('Look', ({ media }) => media.length);
+ok('an edit that only reads media keeps the same media list', st().media === ml);
+
+two();
+S.edit('Replace Fonts', (ctx) => { ctx.seq.font = 'B'; ctx.seqs.sq2.font = 'B'; });
+ok('an edit can change another sequence too', st().seqs.sq2.font === 'B');
+S.undo();
+ok('...and undo puts both back', st().sequence.font === undefined && st().seqs.sq2.font === undefined && st().dirty === false);
+S.redo();
+S.switchSequence('sq2'); S.edit('Shorten', ({ seq }) => { seq.d = 1; }); S.switchSequence(main);
+const kept = st().seqs.sq2;
+S.undo();
+ok('a step whose other sequence was edited since is not undone (that work is kept)', st().seqs.sq2 === kept && st().sequence.font === 'B');
+ok('...it is reported in the log', /Cannot undo "Replace Fonts"/.test(st().log[st().log.length - 1] || ''));
+ok('...and the History of this sequence starts after it', st().history.length === 1);
+
+two();
+S.switchSequence('sq2'); S.edit('X', ({ seq }) => { seq.x = 1; }); S.switchSequence(main);
+S.edit('Touch', (ctx) => { ctx.seqs.sq2.y = 1; });
+S.switchSequence('sq2');
+ok('a change made to a sequence from another one starts its History over (older steps would undo it)', st().history.length === 1 && st().sequence.y === 1 && st().sequence.x === 1);
+S.undo();
+ok('...so undo there does not lose it', st().sequence.y === 1);
+
+two();
+setOpacity(10); S.switchSequence('sq2'); S.switchSequence(main); setOpacity(20);
+ok('a slider drag is not merged across a sequence switch', st().history.length === 3, JSON.stringify(st().history));
+S.setHistoryLimit(1);
+ok('the History limit applies per sequence', st().history.length === 2 && st().history[0].label === 'Opacity');
+S.setHistoryLimit(100);
 
 // ---- E4: an edit made during Save stays unsaved ----
 fresh();
