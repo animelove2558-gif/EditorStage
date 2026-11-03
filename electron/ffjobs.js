@@ -25,6 +25,7 @@ function createJobs(ffmpegPath) {
     p.stderr.on('data', (d) => { j.err = (j.err + d).slice(-1500); });
     p.stdin.on('error', () => {});
     p.on('error', (e) => finish(-1, String(e.message || e)));
+    p.on('exit', (code) => finish(code)); // 'close' waits for stdin, which is still open on our side
     p.on('close', (code) => finish(code));
     return { ok: true };
   }

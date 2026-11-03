@@ -30,9 +30,21 @@ The third-party components in this program keep their own licenses: see THIRD_PA
 packages/, ffmpeg/ and libvips/ folders here.
 `);
 
-// ---- npm packages that ship in the app (dev tools such as esbuild / electron-builder are not shipped) ----
-const dirs = execSync('npm ls --omit=dev --all --parseable', { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-  .split(/\r?\n/).filter((d) => d && path.resolve(d) !== root);
+// ---- npm packages that ship in the app ----
+// 1. runtime dependencies packed as node_modules (only ffmpeg-static since 3.1.0)
+const prodDirs = execSync('npm ls --omit=dev --all --parseable', { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  .split(/\r?\n/).filter((d) => d && path.resolve(d) !== root).map((d) => path.resolve(d));
+// 2. packages bundled into dist/ by esbuild (devDependencies other than the build tools) and everything they depend on
+const BUILD_TOOLS = new Set(['electron', 'electron-builder', 'esbuild']);
+const bundledDirs = new Set();
+const resolvePkg = (name, from) => { for (let d = from; ; d = path.dirname(d)) { const p = path.join(d, 'node_modules', name); if (fs.existsSync(path.join(p, 'package.json'))) return p; if (path.dirname(d) === d || d === path.dirname(root)) return null; } };
+const walk = (dir) => {
+  if (!dir || bundledDirs.has(dir)) return; bundledDirs.add(dir);
+  const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  for (const dep of Object.keys({ ...(pkg.dependencies || {}), ...(pkg.optionalDependencies || {}) })) walk(resolvePkg(dep, dir));
+};
+for (const name of Object.keys(app.devDependencies || {}).filter((n) => !BUILD_TOOLS.has(n))) walk(resolvePkg(name, root));
+const dirs = [...prodDirs, ...bundledDirs];
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)([.-].*)?$/i;
 // packages published without a license file: the standard text of the license they declare, with their copyright holder
 const HOLDER = { 'onnxruntime-web': 'Microsoft Corporation', 'onnxruntime-node': 'Microsoft Corporation', 'onnxruntime-common': 'Microsoft Corporation', '@mediapipe/tasks-vision': 'Google LLC (The MediaPipe Authors)', 'clipper-lib': 'Angus Johnson (Clipper); Timo (JavaScript translation)' };
@@ -94,7 +106,9 @@ You may replace this FFmpeg with another build: Preferences > FFmpeg > Choose FF
 `);
 
 // ---- libvips (LGPL-3.0-or-later): prebuilt DLLs shipped by sharp, an indirect dependency of @huggingface/transformers ----
-const vipsDir = fs.readdirSync(path.join(root, 'node_modules', '@img')).map((d) => path.join(root, 'node_modules', '@img', d)).find((d) => fs.existsSync(path.join(d, 'versions.json')));
+// only when sharp is packed as a runtime node_module (before 3.1.0); a bundled renderer never loads it
+const imgRoot = path.join(root, 'node_modules', '@img');
+const vipsDir = (fs.existsSync(imgRoot) ? fs.readdirSync(imgRoot) : []).map((d) => path.join(imgRoot, d)).find((d) => fs.existsSync(path.join(d, 'versions.json')) && prodDirs.includes(path.resolve(d)));
 if (vipsDir) {
   fs.mkdirSync(path.join(out, 'libvips'), { recursive: true });
   const vers = JSON.parse(fs.readFileSync(path.join(vipsDir, 'versions.json'), 'utf8'));
@@ -117,7 +131,22 @@ EditorStage (BYS & RB). Ask them for it.
 `);
 }
 
-console.log(`licenses/: ${count} packages, FFmpeg ${version}${missing.length ? `; no license file in: ${missing.join(', ')}` : ''}`);
+// ---- AI models bundled in dist/ (assets/models): which license each one has, with the license text ----
+const MODELS = [
+  ['selfie_segmenter.tflite', 'MediaPipe Selfie Segmenter (Remove Background)', 'Apache-2.0', 'Google LLC (The MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter'],
+  ['face_landmarker.task', 'MediaPipe Face Landmarker (Auto Reframe, Long-to-Shorts)', 'Apache-2.0', 'Google LLC (The MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker'],
+  ['efficientdet_lite0.tflite', 'EfficientDet-Lite0 object detector (Auto Reframe, Smart B-Roll)', 'Apache-2.0', 'Google LLC (The TensorFlow / MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector'],
+  ['whisper', 'Whisper base, ONNX export onnx-community/whisper-base_timestamped (speech to text)', 'MIT', 'OpenAI (Whisper weights); ONNX conversion by the onnx-community / Hugging Face', 'https://huggingface.co/onnx-community/whisper-base_timestamped'],
+];
+const shipped = MODELS.filter(([f]) => fs.existsSync(path.join(root, 'assets', 'models', f)));
+if (shipped.length) {
+  fs.mkdirSync(path.join(out, 'models'), { recursive: true });
+  const lines = shipped.map(([f, name, lic, holder, url]) => `${name}\n  file: ${f}\n  license: ${lic}\n  copyright: ${holder}\n  source: ${url}\n`).join('\n');
+  const texts = [...new Set(shipped.map((m) => m[2]))].map((lic) => `----- ${lic} -----\n${STANDARD[lic](lic === 'MIT' ? 'OpenAI' : 'Google LLC')}\n`).join('\n');
+  fs.writeFileSync(path.join(out, 'models', 'MODELS.txt'), `AI models bundled with EditorStage (run offline, unmodified)\n${'='.repeat(60)}\n\n${lines}\n${texts}`);
+}
+
+console.log(`licenses/: ${count} packages, ${shipped.length} models, FFmpeg ${version}${missing.length ? `; no license file in: ${missing.join(', ')}` : ''}`);
 if (missingSource.length) {
   console.error(`third_party_source/ is missing the source the installer must include. Download into third_party_source/:\n  ${missingSource.join('\n  ')}`);
   process.exit(1);

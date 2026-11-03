@@ -66,7 +66,7 @@ suite('phase8 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen }
   console.log('E10 encoder failure / half-written exports');
   r = await js(`const t0 = performance.now(); const id = 'p8-dead';
     const st = await window.editorstage.job.start(id, ['-hide_banner', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', '16x16', '-i', '-', '-c:v', 'no_such_encoder', ${J(out('dead.mp4'))}]);
-    await T.tick(1500); const w = await window.editorstage.job.write(id, new Uint8Array(1024)); const e = await window.editorstage.job.end(id);
+    const w0 = await window.editorstage.job.write(id, new Uint8Array(1024)); await T.tick(1500); const w = await window.editorstage.job.write(id, new Uint8Array(1024)); const e = await window.editorstage.job.end(id);
     return { st, w, e, ms: performance.now() - t0 };`);
   ok('write after the encoder died returns false and end resolves with its error (no hang)', r.st.ok && r.w === false && r.e.ok === false && r.e.error && r.ms < 8000, J(r));
   r = await js(`T.fresh(160, 90); E.gfx.addGraphic('rect', 0, { x: 0.5, y: 0.5, w: 1, h: 1, color: '#00ff00', stroke: false });
@@ -99,7 +99,8 @@ suite('phase8 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen }
   console.log('E12 number fields, E13 shortcut focus');
   r = await js(`const host = document.createElement('div'); document.body.appendChild(host); const { createRoot } = E.reactDom; const root = createRoot(host);
     const got = []; const React = E.react;
-    root.render(React.createElement(E.NumInput, { value: 100, onChange: (e) => got.push(+e.target.value), className: 'p8num' })); await T.tick(50);
+    const Box = () => { const [v, setV] = React.useState(100); return React.createElement(E.NumInput, { value: v, onChange: (e) => { got.push(+e.target.value); setV(+e.target.value); }, className: 'p8num' }); };
+    root.render(React.createElement(Box)); await T.tick(50);
     const el = host.querySelector('input'); el.focus(); await T.tick(10);
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; const type = (v) => { setter.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
     type(''); await T.tick(10); type('-'); await T.tick(10); type('-8'); await T.tick(10); type('80'); await T.tick(10);

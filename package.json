@@ -58,7 +58,7 @@
         "from": "third_party_source",
         "to": "source-code",
         "filter": [
-          "*.tar.xz"
+          "ffmpeg-*.tar.xz"
         ]
       }
     ],

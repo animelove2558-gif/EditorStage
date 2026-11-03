@@ -18,7 +18,7 @@ Versions are the ones installed in `node_modules`. The license was read from eac
 | onnxruntime-web | 1.22.0-dev | MIT | ML inference (WASM) | |
 | @mediapipe/tasks-vision | 1.1.0 | Apache-2.0 | Face / object detection (auto reframe) | |
 | ffmpeg-static | 5.3.0 | GPL-3.0-or-later (wrapper and binary) | Decode / encode / probe | See **FFmpeg** below |
-| sharp + @img/sharp-win32-x64 | 0.34.5 | Apache-2.0 (sharp); **LGPL-3.0-or-later** (bundled libvips 8.17.3 DLLs) | Indirect dependency of @huggingface/transformers (its Node image loader). EditorStage's renderer does not call it | The DLLs are separate, replaceable files. Their license and source pointers are in `licenses/libvips/` |
+| sharp + @img/sharp-win32-x64 | 0.34.5 | Apache-2.0 (sharp); LGPL-3.0-or-later (libvips DLLs) | Indirect dependency of @huggingface/transformers (its Node image loader). **Not shipped since 3.1.0**: the renderer bundle in `dist/` never loads it, and the bundled packages are no longer copied into the installer as node_modules (with onnxruntime-node). Its license text is still listed in `packages/` | Before 3.1.0 the DLLs were shipped with `licenses/libvips/` and the libvips source |
 
 ## Models (bundled, run offline)
 
@@ -77,14 +77,16 @@ The license is detected, not assumed. `ffmpeg -version` shows whether the build 
 
 `npm run dist*` runs `scripts/collect_licenses.mjs`, which writes `licenses/`. electron-builder then copies it to `resources/licenses/` in the installed app:
 - `THIRD_PARTY_LICENSES.md`: this file.
-- `packages/`: the LICENSE / NOTICE text of every production npm package, direct and indirect. Packages published without a license file get the standard text of the license they declare.
+- `packages/`: the LICENSE / NOTICE text of every npm package in the app, direct and indirect: the runtime dependency (ffmpeg-static) and every package esbuild bundles into `dist/` (React, FlexLayout, transformers / ONNX Runtime Web, MediaPipe, pdf.js, JSZip, acorn, clipper-lib and their dependencies). Packages published without a license file get the standard text of the license they declare.
 - `ffmpeg/`: the GPL text, the build information, and `SOURCE.txt`, which says where the source is.
-- `libvips/`: LGPL source pointers and versions.
+- `models/`: the license of each bundled AI model (table above) with the license text.
+- `libvips/`: only written when sharp is packaged as a runtime module (not the case since 3.1.0).
+- `resources/source-code/`: the FFmpeg source archive (`third_party_source/ffmpeg-<version>.tar.xz`; the collect script stops the build when it does not match the shipped binary version).
 
 Electron's own `LICENSE.electron.txt` and `LICENSES.chromium.html` sit next to `EditorStage.exe`.
 
 **Before giving the installer to others (GPL / LGPL source):**
-- Keep the source of the shipped FFmpeg build available for as long as you distribute it. The simplest way is to put the FFmpeg source archive (and the libvips source) on the same page as the installer.
+- Keep the source of the shipped FFmpeg build available for as long as you distribute it. The simplest way is to put the FFmpeg source archive (and the libvips source, for builds before 3.1.0) on the same page as the installer.
 - `SOURCE.txt` also tells users they can ask you for it.
 
 ## Added per phase
