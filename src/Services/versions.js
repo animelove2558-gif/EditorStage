@@ -1,7 +1,7 @@
 // Project Version Control & Auto-Save: revisions + branches stored next to the project in "<project>.history/".
 // Storage is content-addressed: the project is split into objects (each clip, media item, track list, sequence header,
 // other sequences) hashed with SHA-256; a revision is a small manifest of hashes, so unchanged parts are stored once.
-import { getState, set, loadProject } from '../Core/store';
+import { getState, set, loadProject, markDirty } from '../Core/store';
 import { getPrefs } from '../Core/prefs';
 
 const es = () => window.editorstage;
@@ -75,7 +75,7 @@ export async function restoreRevision(id) {
   const refs = await readRefs(); const rev = refs.revisions[id]; if (!rev) throw new Error('Unknown revision');
   const p = await paths(); const manifest = JSON.parse(await es().readText(`${p.objects}${p.s}${rev.manifest.slice(0, 2)}${p.s}${rev.manifest}.json`));
   const data = await implode(manifest); const path = getState().projectPath;
-  loadProject(data, path); set({ dirty: true, restoredFrom: id });
+  loadProject(data, path); set({ restoredFrom: id }); markDirty();
   return rev;
 }
 /** Start a new branch at a revision (or at the current head) and switch to it. */

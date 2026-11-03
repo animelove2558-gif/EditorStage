@@ -77,8 +77,25 @@ export function set(patch) {
   emit();
 }
 
-const snap = () => ({ sequence: state.sequence, media: state.media, seqs: state.seqs, label: state.history[state.historyIndex].label });
+// ---- Saved state tracking (Premiere-style): every undoable content state has a revision id; the project is dirty when the
+// current id differs from the id that was last written to disk, or when a non-undoable change (markDirty) happened since.
+let revSeq = 0; // id generator
+let curRev = 0; // id of the content currently shown
+let savedRev = 0; // curRev when the project was last saved / loaded
+let forced = 0, savedForced = 0; // counter of non-undoable project changes (bins, new sequences, restores)
+const isDirty = () => curRev !== savedRev || forced !== savedForced;
+const syncDirty = () => { if (state.dirty !== isDirty()) state = { ...state, dirty: isDirty() }; };
+/** Token for the content being saved: pass it to markSaved() once the write finished (edits made during the write stay dirty). */
+export const saveToken = () => ({ rev: curRev, forced });
+export function markSaved(tok = saveToken()) { savedRev = tok.rev; savedForced = tok.forced; syncDirty(); emit(); }
+/** A project change that is not an undoable edit (bins, sequences, restored revisions): the project needs saving. */
+export function markDirty() { forced++; syncDirty(); emit(); }
+const newRev = () => { curRev = ++revSeq; };
+const resetSaved = () => { newRev(); savedRev = curRev; savedForced = forced; };
+
+const snap = () => ({ sequence: state.sequence, media: state.media, seqs: state.seqs, label: state.history[state.historyIndex].label, rev: curRev });
 let lastCoalesce = { key: null, time: 0 };
+const breakCoalesce = () => { lastCoalesce = { key: null, time: 0 }; };
 /** Undoable edit: mutate a deep-cloned sequence and record in History. opts.coalesce merges rapid edits (slider drags) into one history entry. */
 /** Called before every edit / undo / redo (the Create panel's hover preview restores the real sequence first). */
 export const beforeEdit = new Set();
@@ -95,7 +112,7 @@ function trimHistory() {
 export function deleteHistoryFrom(n) {
   if (n <= 0) return;
   while (state.historyIndex >= n && undoStack.length) undo();
-  redoStack.length = 0; state = { ...state, history: state.history.slice(0, state.historyIndex + 1) }; emit();
+  redoStack.length = 0; breakCoalesce(); state = { ...state, history: state.history.slice(0, state.historyIndex + 1) }; syncDirty(); emit();
 }
 export function edit(label, fn, opts = {}) {
   settle();
@@ -116,14 +133,15 @@ export function edit(label, fn, opts = {}) {
   // safety net: whatever a command did, clips that sit on a locked track stay exactly as they were
   if (lockedBefore.length) { const now = ctx.seq || seq; if (now.clips) now.clips = [...now.clips.filter((c) => !onLocked.has(c.id)), ...lockedBefore]; }
   const history = merge ? state.history : [...state.history.slice(0, state.historyIndex + 1), { label }];
-  state = { ...state, sequence: seq, media, seqs, selection: ctx.sel, history, historyIndex: history.length - 1, dirty: true };
+  newRev();
+  state = { ...state, sequence: seq, media, seqs, selection: ctx.sel, history, historyIndex: history.length - 1, dirty: isDirty() };
   trimHistory(); emit();
 }
 /** Commit a gesture-based sequence change (before/after snapshots) as one undoable step. */
 export function commitSeq(label, before, after) {
-  undoStack.push({ ...snap(), sequence: before }); redoStack.length = 0;
+  undoStack.push({ ...snap(), sequence: before }); redoStack.length = 0; breakCoalesce(); newRev();
   const history = [...state.history.slice(0, state.historyIndex + 1), { label }];
-  state = { ...state, sequence: after, history, historyIndex: history.length - 1, dirty: true };
+  state = { ...state, sequence: after, history, historyIndex: history.length - 1, dirty: isDirty() };
   trimHistory(); emit();
 }
 
@@ -131,40 +149,43 @@ export function undo() {
   settle();
   const prev = undoStack.pop();
   if (!prev) return;
-  redoStack.push(snap());
+  redoStack.push(snap()); breakCoalesce(); curRev = prev.rev ?? ++revSeq;
   state = { ...state, sequence: prev.sequence, media: prev.media, seqs: prev.seqs ?? state.seqs, historyIndex: Math.max(0, state.historyIndex - 1) };
-  emit();
+  syncDirty(); emit();
 }
 export function redo() {
   settle();
   const next = redoStack.pop();
   if (!next) return;
-  undoStack.push(snap());
+  undoStack.push(snap()); breakCoalesce(); curRev = next.rev ?? ++revSeq;
   state = { ...state, sequence: next.sequence, media: next.media, seqs: next.seqs ?? state.seqs, historyIndex: Math.min(state.history.length - 1, state.historyIndex + 1) };
-  emit();
+  syncDirty(); emit();
 }
 
 export const allSeqs = () => ({ ...state.seqs, [state.sequence.id]: state.sequence });
 export function switchSequence(id) {
   const all = allSeqs(); if (id === state.sequence.id || !all[id]) return;
   const { [id]: next, ...rest } = all;
-  undoStack.length = 0; redoStack.length = 0;
-  state = { ...state, sequence: next, seqs: rest, selection: [], selectedTransition: null, playhead: 0, playing: false };
+  // undo snapshots hold the whole project (the other sequences included), so they cannot follow a switch: the History
+  // panel starts over with the opened sequence instead of listing steps that can no longer be undone
+  undoStack.length = 0; redoStack.length = 0; breakCoalesce();
+  state = { ...state, sequence: next, seqs: rest, selection: [], selectedTransition: null, playhead: 0, playing: false, history: [{ label: `Open ${next.name || 'Sequence'}` }], historyIndex: 0 };
   emit();
 }
 /** Register a new sequence object; optionally make it the active one. */
 export function addSequence(seqObj, activate = false) {
-  state = { ...state, seqs: { ...state.seqs, [seqObj.id]: seqObj }, dirty: true };
+  forced++;
+  state = { ...state, seqs: { ...state.seqs, [seqObj.id]: seqObj } }; syncDirty();
   emit(); if (activate) switchSequence(seqObj.id);
 }
 
 export function resetProject() {
-  undoStack.length = 0; redoStack.length = 0;
+  undoStack.length = 0; redoStack.length = 0; breakCoalesce(); resetSaved();
   state = initial();
   emit();
 }
 export function loadProject(data, path) {
-  undoStack.length = 0; redoStack.length = 0;
+  undoStack.length = 0; redoStack.length = 0; breakCoalesce(); resetSaved();
   state = { ...initial(), ...data, projectPath: path, dirty: false, playing: false };
   emit();
 }

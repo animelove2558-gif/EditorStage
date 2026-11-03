@@ -1,4 +1,4 @@
-import { getState, set, edit, undo, redo, resetProject, loadProject, addSequence, switchSequence, allSeqs } from './store';
+import { getState, set, edit, undo, redo, resetProject, loadProject, addSequence, switchSequence, allSeqs, saveToken, markSaved } from './store';
 import { requestPanel, loadWorkspace, toggleRail, closeActivePanel, PANELS } from './layout';
 import { importPaths, mediaById, releaseReference } from '../Services/media';
 import { defaultRefTime, rememberCompare } from './compare';
@@ -354,11 +354,22 @@ async function openPath(p) {
   // missing source files: mark offline and offer Link Media (like Premiere on open)
   const { checkOffline } = await import('../Services/mediaLink'); if ((await checkOffline()).length) set({ dialog: { type: 'linkMedia', props: {} } });
 }
+/** The readable part of an IPC error ("Error invoking remote method 'fs:write': Error: ENOSPC: ..." -> "ENOSPC: ..."). */
+export const errText = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, '');
+/** A Save that did not reach the disk: say why (the file on disk is unchanged, the write is atomic) and offer Save As. */
+function saveFailed(path, e) {
+  const msg = `Could not save ${path.split(/[\\/]/).pop()}: ${errText(e)}`;
+  notify(msg);
+  openDialog('confirm', { title: 'Save Failed', message: `${msg}. The file on disk was not changed. Save the project to another location?`, okLabel: 'Save As...', onOk: () => commands['file.saveAs']() });
+}
+/** Write the project; true when it reached the disk. Edits made while the file is being written stay unsaved. */
 async function saveProject(path) {
-  await window.editorstage.writeFile(path, projectJson(getState()));
-  set({ projectPath: path, dirty: false }); recentAdd(path);
+  const tok = saveToken(); const text = projectJson(getState());
+  try { await window.editorstage.writeFile(path, text); } catch (e) { saveFailed(path, e); return false; }
+  set({ projectPath: path }); markSaved(tok); recentAdd(path);
   // every Save also records a revision in the project history (deduplicated, so it costs almost nothing)
   commitRevision('Save').catch((e) => notify('History: ' + e.message));
+  return true;
 }
 async function importAny(paths) {
   const { INTERCHANGE_EXT, importInterchange } = await import('../Services/interchange');
@@ -587,7 +598,7 @@ export const commands = {
   'file.saveAs': async () => { const path = await window.editorstage.saveDialog('project', `${getState().projectName}.esproj`); if (path) await saveProject(path); },
   'file.saveCopy': async () => {
     const s = getState(); const path = await window.editorstage.saveDialog('project', `${s.projectName}-copy.esproj`); if (!path) return;
-    await window.editorstage.writeFile(path, projectJson(s));
+    try { await window.editorstage.writeFile(path, projectJson(s)); notify('Saved a copy as ' + path); } catch (e) { saveFailed(path, e); }
   },
   'file.revert': () => { const p = getState().projectPath; if (!p) return notify('Nothing to revert (project not saved)'); if (!getState().dirty) return openPath(p);
     openDialog('confirm', { title: 'Revert', message: `Discard all changes since ${p.split(/[\\/]/).pop()} was last saved?`, okLabel: 'Revert', onOk: () => openPath(p) }); },

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, session, protocol, net, shell
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs/promises');
+const { atomicWrite } = require('./fileGuard');
 require('./media');
 require('./workflow');
 
@@ -76,7 +77,8 @@ ipcMain.handle('dialog:save', async (_e, kind, name, ext) => {
 ipcMain.handle('dialog:folder', async () => { const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] }); return r.canceled ? null : r.filePaths[0]; });
 ipcMain.handle('fs:read', async (_e, p) => fs.readFile(p));
 ipcMain.handle('fs:readText', async (_e, p) => fs.readFile(p, 'utf8'));
-ipcMain.handle('fs:write', async (_e, p, data) => fs.writeFile(p, typeof data === 'string' ? data : Buffer.from(data)));
+// every write is atomic (temp file + fsync + rename): a failed Save never damages the file that was there
+ipcMain.handle('fs:write', async (_e, p, data) => atomicWrite(p, data));
 
 const MEDIA_EXT = new Set('mp4 mov avi mkv webm prores hevc h265 h264 mpeg mpg m4v ts flv mts m2ts mxf 3gp wmv jpg jpeg png gif webp tiff tif bmp svg heic heif raw cr2 nef arw dng wav mp3 aac m4a flac ogg aiff aif wma opus'.split(' '));
 ipcMain.handle('fs:listRoots', async () => { const out = []; for (const l of 'CDEFGHIJKLMNOPQRSTUVWXYZ') { try { await fs.access(l + ':\\'); out.push(l + ':\\'); } catch { /* none */ } } return process.platform === 'win32' ? out : ['/']; });
