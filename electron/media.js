@@ -38,6 +38,7 @@ const runOnce = (bin, args) => new Promise((resolve) => {
 // one conversion per source at a time: a second request for the same file waits for the first
 const transcoding = new Map();
 ipcMain.handle('media:transcode', (_e, src, kind) => {
+  if (!guard().canRead(src)) return { ok: false, error: `EditorStage may not read ${src}` };
   const k = `${kind}|${src}`;
   if (!transcoding.has(k)) transcoding.set(k, transcode(src, kind).catch((e) => ({ ok: false, error: String(e.message || e) })).finally(() => transcoding.delete(k)));
   return transcoding.get(k);
@@ -98,7 +99,7 @@ ipcMain.handle('app:tmp', () => app.getPath('temp'));
 
 // ---- Probe: stream info via `ffmpeg -i` ----
 ipcMain.handle('media:probe', (_e, src) => new Promise((resolve) => {
-  const bin = ffmpegPath(); if (!bin) return resolve({ ok: false });
+  const bin = ffmpegPath(); if (!bin || !guard().canRead(src)) return resolve({ ok: false });
   const p = spawnTracked(bin, ['-hide_banner', '-i', src], { windowsHide: true });
   let err = ''; p.stderr.on('data', (d) => { err += d; });
   p.on('error', () => resolve({ ok: false }));
@@ -115,6 +116,7 @@ ipcMain.handle('media:probe', (_e, src) => new Promise((resolve) => {
 // ---- MOGRT library (installed Motion Graphics Templates) ----
 const libDir = () => { const d = path.join(app.getPath('userData'), 'mogrt-library'); fs.mkdirSync(d, { recursive: true }); return d; };
 ipcMain.handle('mogrt:install', async (_e, src) => {
+  if (!guard().canRead(src)) throw new Error(`EACCES: EditorStage may not read ${src}`);
   const base = path.basename(src).replace(/[^\w.\-\u0E00-\u0E7F ]+/g, '_');
   let name = base; let n = 1;
   while (fs.existsSync(path.join(libDir(), name))) name = `${path.parse(base).name}-${n++}${path.extname(base)}`;

@@ -13,7 +13,8 @@ contextBridge.exposeInMainWorld('editorstage', {
   closeOk: () => ipcRenderer.send('app:closeOk'),
   takeOpenFile: () => ipcRenderer.invoke('app:takeOpenFile'),
   onOpenFile: (cb) => ipcRenderer.on('app:openFile', (_e, p) => cb(p)),
-  pathForFile: (file) => webUtils.getPathForFile(file),
+  // the path of a dropped / chosen File; the main process may then read it (a page cannot make up a File with a path)
+  pathForFile: (file) => { const p = webUtils.getPathForFile(file); if (p) ipcRenderer.send('fs:dropped', p); return p; },
   transcode: (src, kind) => ipcRenderer.invoke('media:transcode', src, kind),
   exportStart: (args) => ipcRenderer.invoke('export:start', args),
   exportFrame: (buf) => ipcRenderer.invoke('export:frame', buf),

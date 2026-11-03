@@ -22,7 +22,7 @@ const runFfmpeg = (args) => new Promise((resolve) => {
 });
 
 // ---------------------------------------------------------------- generic fs helpers (history / archive)
-ipcMain.handle('fs:mkdir', async (_e, p) => { if (!path.isAbsolute(String(p)) || guard().inStartup(p)) throw refuse('create', p); await fs.promises.mkdir(p, { recursive: true }); return true; });
+ipcMain.handle('fs:mkdir', async (_e, p) => { if (!guard().canMakeDir(p)) throw refuse('create', p); await fs.promises.mkdir(p, { recursive: true }); return true; });
 ipcMain.handle('fs:exists', async (_e, p) => fs.existsSync(p));
 ipcMain.handle('fs:stat', async (_e, p) => { try { const s = await fs.promises.stat(p); return { size: s.size, mtime: s.mtimeMs, dir: s.isDirectory() }; } catch { return null; } });
 ipcMain.handle('fs:readdir', async (_e, p) => { try { return await fs.promises.readdir(p); } catch { return []; } });
@@ -56,6 +56,7 @@ ipcMain.handle('app:env', () => ({ remoteSession: process.platform === 'win32' &
 // ---------------------------------------------------------------- audio extraction (Edit in AudioStage, AI tools)
 /** Render a source range to a WAV (default 48 kHz / 24-bit PCM). */
 ipcMain.handle('media:extractAudio', async (_e, src, start, dur, out, opts = {}) => {
+  if (!guard().canRead(src)) return { ok: false, error: `EditorStage may not read ${src}` };
   if (!guard().canWrite(out)) return { ok: false, error: `EditorStage may not write ${out}` };
   await fs.promises.mkdir(path.dirname(out), { recursive: true });
   const codec = opts.bits === 16 ? 'pcm_s16le' : opts.bits === 32 ? 'pcm_f32le' : 'pcm_s24le';
@@ -109,6 +110,7 @@ function watchFile(file) {
   watchers.set(file, { watcher: w, timer: null });
 }
 ipcMain.handle('audiostage:open', async (_e, file) => {
+  if (!guard().canRead(file)) return { ok: false, error: `EditorStage may not read ${file}` };
   const loc = locateAudioStage();
   if (!loc) return { ok: false, error: 'AudioStage was not found. Set its location in Smart Tools > AudioStage.' };
   const arg = `--editorstage-edit=${file}`;
@@ -146,6 +148,8 @@ ipcMain.handle('archive:run', async (e, { items, dest, project, compress = true,
   for (const it of items) {
     i++; e.sender.send('archive:progress', { i, n: items.length, name: it.name });
     try {
+      if (!guard().canRead(it.path)) throw new Error('EditorStage may not read this file');
+      if (removeOriginals && !guard().canArchiveRemove(it.path)) throw new Error('only media of the open project can be removed after archiving');
       const st = await fs.promises.stat(it.path); const hash = await sha1File(it.path);
       const ext = path.extname(it.path); const stored = `${hash}${ext}${compress ? '.gz' : ''}`; const out = path.join(dir, 'files', stored);
       if (compress) await pipeline(fs.createReadStream(it.path), zlib.createGzip({ level: 6 }), fs.createWriteStream(out));
@@ -161,13 +165,14 @@ ipcMain.handle('archive:run', async (e, { items, dest, project, compress = true,
   }
   const rec = { id: crypto.randomUUID(), project, created: Date.now(), dest: dir, volume: volumeLabel(dest), note, items: entries };
   await fs.promises.writeFile(path.join(dir, 'index.json'), JSON.stringify(rec, null, 1));
-  const ix = readIndex(); ix.archives.push(rec); writeIndex(ix);
+  const ix = readIndex(); ix.archives.push({ ...rec, local: true }); writeIndex(ix); // local: archived on this machine, so its original paths are trusted
   return { ok: true, record: rec };
 });
 ipcMain.handle('archive:index', () => readIndex());
 ipcMain.handle('archive:forget', (_e, id) => { const ix = readIndex(); ix.archives = ix.archives.filter((a) => a.id !== id); writeIndex(ix); return true; });
 /** Re-read an archive folder's index.json (e.g. a drive archived on another machine) into the local index. */
 ipcMain.handle('archive:importIndex', async (_e, folder) => {
+  if (!guard().picked(folder)) throw refuse('read', folder);
   const rec = JSON.parse(await fs.promises.readFile(path.join(folder, 'index.json'), 'utf8')); rec.dest = folder;
   const ix = readIndex(); ix.archives = ix.archives.filter((a) => a.id !== rec.id); ix.archives.push(rec); writeIndex(ix); return rec;
 });
@@ -177,7 +182,9 @@ ipcMain.handle('archive:restore', async (_e, { archiveId, hash, to }) => {
   const it = rec.items.find((x) => x.hash === hash); if (!it) return { ok: false, error: 'Unknown item' };
   const src = path.join(rec.dest, 'files', it.stored);
   if (!fs.existsSync(src)) return { ok: false, error: `Archive drive not connected (${rec.volume}). Connect it and try again.`, offline: true };
-  const out = to || it.originalPath; if (!guard().canWrite(out)) return { ok: false, error: `EditorStage may not write ${out}` };
+  // the original place is trusted for archives made on this machine; otherwise (an imported index) it must be writable
+  const out = to || it.originalPath; const trusted = !to && rec.local && path.isAbsolute(String(out)) && !require('./fileGuard').isDangerous(out) && !guard().inStartup(out);
+  if (!trusted && !guard().canWrite(out)) return { ok: false, error: `EditorStage may not write ${out}` };
   await fs.promises.mkdir(path.dirname(out), { recursive: true });
   if (it.compressed) await pipeline(fs.createReadStream(src), zlib.createGunzip(), fs.createWriteStream(out)); else await fs.promises.copyFile(src, out);
   return { ok: true, path: out };

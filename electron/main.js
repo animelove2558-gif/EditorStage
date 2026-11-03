@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, session, protocol, net, shell
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs/promises');
-const { atomicWrite, renameRetry, guard, inside } = require('./fileGuard');
+const { atomicWrite, renameRetry, guard, inside, MEDIA_EXT } = require('./fileGuard');
 const { killAll } = require('./ffjobs');
 require('./media');
 require('./workflow');
@@ -88,8 +88,17 @@ const filters = {
 
 // paths picked in a dialog are what the renderer may write / delete / run beyond its own data (electron/fileGuard.js)
 const G = guard();
-/** a project file the user opens: its history folder (<name>.history) may be written and cleaned up */
-const grantProject = (p) => { if (/\.esproj$/i.test(String(p))) G.grantDir(String(p).replace(/\.esproj$/i, '') + '.history'); };
+// projects the user opened or saved (in a dialog, from Explorer, by drag and drop) stay openable from File > Open Recent:
+// the list is kept by the main process (userData/recent-projects.json), not by the page
+const recentFile = () => path.join(app.getPath('userData'), 'recent-projects.json');
+let recent = null;
+const loadRecent = () => { if (recent) return recent; try { recent = JSON.parse(require('fs').readFileSync(recentFile(), 'utf8')).filter((p) => typeof p === 'string'); } catch { recent = []; } for (const p of recent) G.grantProject(p); return recent; };
+/** a project file the user opens: the file, its history folder (<name>.history) and its own folders may be written */
+const grantProject = (p) => {
+  if (!/\.esproj$/i.test(String(p))) return; G.grantProject(p);
+  const list = loadRecent(); const k = path.resolve(p).toLowerCase(); recent = [p, ...list.filter((x) => path.resolve(x).toLowerCase() !== k)].slice(0, 30);
+  atomicWrite(recentFile(), JSON.stringify(recent)).catch(() => {});
+};
 ipcMain.handle('dialog:open', async (_e, kind, multi) => {
   const r = await dialog.showOpenDialog({ filters: filters[kind], properties: ['openFile', ...(multi ? ['multiSelections'] : [])] });
   if (r.canceled) return [];
@@ -105,12 +114,14 @@ ipcMain.handle('dialog:save', async (_e, kind, name, ext) => {
 });
 ipcMain.handle('dialog:folder', async () => { const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] }); if (r.canceled) return null; G.grantDir(r.filePaths[0]); return r.filePaths[0]; });
 const refuse = (what, p) => Object.assign(new Error(`EACCES: EditorStage may not ${what} ${p}`), { code: 'EACCES' });
-ipcMain.handle('fs:read', async (_e, p) => fs.readFile(p));
-ipcMain.handle('fs:readText', async (_e, p) => { const t = await fs.readFile(p, 'utf8'); grantProject(p); return t; });
+ipcMain.handle('fs:read', async (_e, p) => { loadRecent(); if (!G.canRead(p)) throw refuse('read', p); return fs.readFile(p); });
+// reading a project the user opened also allows what it refers to (media, LUTs, captions, scratch disks)
+ipcMain.handle('fs:readText', async (_e, p) => { loadRecent(); if (!G.canRead(p)) throw refuse('read', p); const t = await fs.readFile(p, 'utf8'); if (/\.esproj$/i.test(String(p))) { grantProject(p); G.grantProjectContent(p, t); } return t; });
+// drag and drop: the preload takes the path from the dropped File object (page script cannot make one up)
+ipcMain.on('fs:dropped', (_e, p) => { G.grantDropped(p); if (/\.esproj$/i.test(String(p))) grantProject(p); });
 // every write is atomic (temp file + fsync + rename): a failed Save never damages the file that was there
-ipcMain.handle('fs:write', async (_e, p, data) => { if (!G.canWrite(p)) throw refuse('write', p); await atomicWrite(p, data); G.made(p); });
+ipcMain.handle('fs:write', async (_e, p, data) => { loadRecent(); if (!G.canWrite(p)) throw refuse('write', p); await atomicWrite(p, data); G.made(p); if (/\.esproj$/i.test(String(p))) grantProject(p); });
 
-const MEDIA_EXT = new Set('mp4 mov avi mkv webm prores hevc h265 h264 mpeg mpg m4v ts flv mts m2ts mxf 3gp wmv jpg jpeg png gif webp tiff tif bmp svg heic heif raw cr2 nef arw dng wav mp3 aac m4a flac ogg aiff aif wma opus'.split(' '));
 ipcMain.handle('fs:listRoots', async () => { const out = []; for (const l of 'CDEFGHIJKLMNOPQRSTUVWXYZ') { try { await fs.access(l + ':\\'); out.push(l + ':\\'); } catch { /* none */ } } return process.platform === 'win32' ? out : ['/']; });
 ipcMain.handle('fs:listDir', async (_e, dir) => { try { const ents = await fs.readdir(dir, { withFileTypes: true }); return { dirs: ents.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name).sort(), files: ents.filter((e) => e.isFile() && MEDIA_EXT.has(e.name.split('.').pop().toLowerCase())).map((e) => e.name).sort() }; } catch { return { dirs: [], files: [] }; } });
 
@@ -119,7 +130,7 @@ ipcMain.handle('fs:rename', async (_e, from, to) => {
   if (!G.canRemove(from)) throw refuse('move', from); if (!G.canWrite(to)) throw refuse('write', to);
   await renameRetry(from, to); G.made(to); return true;
 });
-ipcMain.handle('fs:copy', async (_e, from, to) => { if (!G.canWrite(to)) throw refuse('write', to); await fs.copyFile(from, to); G.made(to); return true; });
+ipcMain.handle('fs:copy', async (_e, from, to) => { if (!G.canRead(from)) throw refuse('read', from); if (!G.canWrite(to)) throw refuse('write', to); await fs.copyFile(from, to); G.made(to); return true; });
 ipcMain.handle('fs:rm', async (_e, p) => { if (!G.canRemove(p)) return false; try { await fs.rm(p, { force: true }); return true; } catch { return false; } });
 // the system opens documents and folders, never programs or scripts (a media path in a project from someone else)
 ipcMain.handle('shell:open', async (_e, p) => (await G.canOpen(p) ? shell.openPath(p) : 'EditorStage does not open programs or scripts'));
@@ -148,6 +159,7 @@ app.whenReady().then(() => {
   const MEDIA_MIME = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', avif: 'image/avif' };
   protocol.handle('es-media', async (req) => {
     const p = decodeURIComponent(new URL(req.url).pathname.slice(1));
+    if (!G.canRead(p)) return new Response('forbidden', { status: 403 });
     const fsSync = require('fs'); const { Readable } = require('stream');
     let st; try { st = await fs.stat(p); } catch { return new Response('not found', { status: 404 }); }
     const h = new Headers({ 'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes', 'Content-Type': MEDIA_MIME[path.extname(p).slice(1).toLowerCase()] || 'application/octet-stream' });
