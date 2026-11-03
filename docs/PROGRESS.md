@@ -158,7 +158,7 @@ e2e ใช้โฟลเดอร์ userData ชั่วคราว ไม�
 - เก็บทุกอย่างผ่าน `edit()` / `commitSeq()` (undo ได้, ความสูงตอนลากเป็น 1 step). field ใหม่ทั้งหมด optional: `track.name`, `track.h` (ไม่มี = 36 px), `track.target` (ไม่มี = พฤติกรรมเดิม)
 
 ### ข้อจำกัด (Phase 5A)
-- Mute ของ video track ไม่มีผลกับ compositor (เหมือนเดิม) จึงไม่ใส่ "Toggle Track Output" ในเมนู
+- Mute ของ video track ไม่มีผลกับ compositor (เหมือนเดิม) — Toggle Track Output (ปุ่มตา) เพิ่มใน Phase 8
 - Source patching แยก (ต้นทาง V1 → ปลายทาง Vn แบบสองคอลัมน์ของ Premiere) รวมเป็นปุ่ม target ชุดเดียว: Insert/Overwrite ใช้ track แรกที่ target ของแต่ละประเภท
 - Insert line ของ Rearrange แสดงจุดวางบน timeline เดิม (ผลจริงที่หักช่องว่างแล้วเห็นได้จากคลิปที่ขยับให้ดูสด ๆ ระหว่างลาก)
 
@@ -352,7 +352,7 @@ File > Export > **AAF (Embedded Audio)...** (`file.exportAAF`) เขียน A
 - เกณฑ์ "ไม่ใช่เพลง" (วัดจากไฟล์ใน D:	est music): ปฏิเสธเมื่อ < 8 วินาที หรือ beat < 16, BPM นอก 50–220, pulse < 5.5, steady < 0.6, conf < 0.04 — เพลงทั้ง 6 ไฟล์ผ่าน (pulse 5.9–9.3, steady 0.81–1.0), ES_* ทุกไฟล์ถูกปฏิเสธ (pulse ≤ 5.1 หรือ steady ≤ 0.37 หรือสั้นเกิน)
 - ผลกับเพลงจริง (ความยาวได้ภายใน 1 beat ทุกกรณี, จุดตัดไม่มี click): Conan 182→60 s = 59.79 s, →300 s = 299.82 s; Ultraman 95→30 s = 29.88 s, →150 s = 150.02 s; Super Sentai 294→90 s = 90.42 s; Powered_mixdown 95→45 s = 45.19 s, →120 s = 120.17 s; วิเคราะห์ 1.5–4.3 s ต่อไฟล์ ครั้งเดียว
 - หมายเหตุ: `Powered_mixd1own.mp3` และ `audio [music] (1).mp3` ไม่ได้มีไบต์ตรงกับไฟล์ต้นฉบับ (encode ต่างกัน) จึงถูกวิเคราะห์แยก; สำเนาไบต์ตรงกันใช้ cache (ทดสอบแล้ว)
-- ข้อจำกัด: Remix ที่ยาวขึ้นจะเขียนทับคลิปที่อยู่ถัดไปบน track เดียวกัน (แบบ overwrite, undo ได้); คลิปที่ link กับวิดีโอต้อง Unlink ก่อน; คลิปที่ปรับ speed ต้อง reset ก่อน; AAF ยังไม่ได้ลองเปิดใน DAW จริง
+- ข้อจำกัด: (Phase 8: Remix ที่ยาวขึ้นดันคลิปถัดไปออกแทนการเขียนทับแล้ว); คลิปที่ link กับวิดีโอต้อง Unlink ก่อน; คลิปที่ปรับ speed ต้อง reset ก่อน; AAF ยังไม่ได้ลองเปิดใน DAW จริง
 
 ### จำนวนเทียบ Premiere Pro (หลัง Phase 6)
 
@@ -367,6 +367,51 @@ File > Export > **AAF (Embedded Audio)...** (`file.exportAAF`) เขียน A
 | Save / Import / Export Preset | ✅ | ❌ | ✅ (.espreset; .prfpset บางส่วน) |
 | Link / Unlink, Markers, Q/W/E/D, Keyboard Shortcuts editor, Audio Track Mixer, Sequence Settings, Preferences, History | ✅ | 🟡 | ✅ (Phase 6A–6C) |
 
+
+## Phase 8 — แก้จากการตรวจ 2–3 พ.ย. 2026 (`PROMPT_FIX_AUDIT_2026-11-02.md`) — ✅ เวอร์ชัน 3.1.0
+
+เริ่มใช้ git (commit แรก = สภาพก่อนแก้ทั้งหมด) และ commit ทุกกลุ่มที่แก้ (`[Phase 8.x]`). ผลทดสอบ: `npm test` 506/506 (19 ชุด, เพิ่ม `test_store` 34, `test_jobs` 15, `test_versions` 30, `test_guard` 30, `test_keys` +11, `test_tracks` +5), `check_commands` 0 missing / 0 stubs, e2e ทุก phase ผ่าน (รวม `scripts/e2e/phase8.cjs` 25/25 ใหม่)
+
+### 8.1–8.3 ข้อมูลผู้ใช้ไม่หาย (E1–E11, F1, F3)
+- **Saved state แบบ Premiere** (`store.js`): ทุกสถานะที่ undo ได้มี revision id; `dirty` = id ปัจจุบัน ≠ id ตอน Save → Undo หลัง Save = ยังไม่บันทึก, Redo กลับมาที่จุด Save = บันทึกแล้ว; "*" ใน title bar ตามจริง; การเปลี่ยนที่ไม่ใช่ undo แต่ถูกบันทึกในไฟล์ (bins, ชื่อโปรเจกต์, scratch disks, In/Out, sequence ใหม่, restore revision) ก็ทำให้ dirty (`markDirty`)
+- ลากสไลเดอร์ทันทีหลัง Undo ไม่รวมกับ step เดิมแล้ว (ล้าง coalesce ใน undo/redo/commitSeq/switch/load/reset); สลับ sequence แล้ว History panel เริ่มใหม่ (undo snapshot เก็บทั้งโปรเจกต์ จึงตาม sequence ไม่ได้)
+- Save: จำ token ก่อนเขียน แก้งานระหว่างเขียน = ยังไม่บันทึก; `fs:write` เขียนแบบ atomic (`<file>.es-tmp` → fsync → rename, ลองซ้ำเมื่อ EPERM/EBUSY, ตรวจพื้นที่ว่างก่อน) → ไฟล์เดิมไม่เสียเมื่อดิสก์เต็ม/ไฟล์ถูกล็อก; Save ล้มเหลวมีกล่อง "Save Failed" + Save As
+- เปิด `.esproj` ที่เสีย: `src/Core/projectFile.js parseProject` ตรวจ JSON + โครงสร้างขั้นต่ำ แจ้งเหตุผล และเสนอเปิด revision ล่าสุดจาก Project History
+- โปรเจกต์มี `projectId`; auto-save ของโปรเจกต์ที่ยังไม่ Save อยู่ที่ `userData/autosave/<projectId>.history` (Untitled หลายตัวไม่ปนกัน) และย้ายไปข้างไฟล์ตอน Save ครั้งแรก
+- กู้คืนหลังแครช: `userData/session.json` มีอยู่ตลอดที่โปรแกรมเปิดและถูกลบเมื่อปิดปกติ; เปิดใหม่แล้วเจอ = ถาม "Recover Project" จาก revision ล่าสุดที่ไม่ใช่ Save
+- `commitRevision` เข้าคิวเดียว (บันทึกสภาพโปรเจกต์ ณ ตอนเรียก), auto-save ข้ามถ้ามีตัวที่ทำอยู่, ลบ object ที่ไม่มี revision อ้างถึงหลัง prune (gc)
+- Export ไม่ค้างเมื่อ FFmpeg ตาย (`electron/ffjobs.js` บันทึก exit ทันทีจาก 'exit'/'close'); export render ลง `<name>.es-part.<ext>` แล้ว rename เมื่อสำเร็จ — ยกเลิก/ผิดพลาด = ไม่มีไฟล์ครึ่งเดียว, ไฟล์เดิมชื่อเดียวกันไม่ถูกทับจนกว่าจะเสร็จ; transcode cache แปลงลง `.part` แล้ว rename, ไฟล์เดียวกันไม่แปลงซ้อน
+- In/Out ของ sequence บันทึกใน `.esproj`
+
+### 8.4 ช่องตัวเลข / คีย์ลัด (E12, E13)
+- `src/Components/NumInput.jsx` แทน `<input type="number">` ทั้ง 53 ช่อง: ช่องว่าง, "-", "1." ไม่ถูกส่งเป็น 0 (ไม่กระพริบ ไม่สร้าง keyframe 0), Enter = ใช้ค่า, Esc = คืนค่าเดิม, Shift+ลูกศร ×10
+- `keys.js keyBelongsToField`: ข้ามคีย์ลัดเฉพาะช่องพิมพ์ข้อความ / textarea / contentEditable / select; checkbox, ปุ่ม, color, slider (ยกเว้นลูกศร) ให้คีย์ลัดทำงาน
+
+### 8.5–8.7 Track Output / ความปลอดภัย / ตัวติดตั้ง (A1–A6, B, E14–E16)
+- **Toggle Track Output** (`track.hidden`): ปุ่มตาที่หัว video/caption track + เมนูคลิกขวา, undo ได้, บันทึกในไฟล์; compositor ข้าม track ที่ซ่อน (Preview = Export = renderFrame), Smart Render ไม่นับ; track ที่ซ่อนยังใช้เป็น track matte / layer input ได้ (เหมือน Premiere)
+- ลบ WebGLRenderer / WebGPURenderer / codec.js / decoder.worker ที่ไม่มีใครใช้; description ตรงกับของจริง; หน้า mogrt-test build เฉพาะ `ES_DEV=1`
+- หน้าต่างหลัก: `sandbox: true`, ปฏิเสธ window.open (http/https เปิดใน browser ระบบ), กัน will-navigate / webview, DevTools เฉพาะตอนไม่ได้แพ็ก; `es-app` ตรวจ path แบบโฟลเดอร์ (dist-xxx ไม่ผ่าน); จับภาพหน้าจอถามก่อน
+- `electron/fileGuard.js`: เขียนไฟล์โปรแกรม/สคริปต์ (.exe .bat .cmd .ps1 .lnk …) ไม่ได้ ยกเว้น path ที่ผู้ใช้เลือกใน dialog, ไม่เขียนลง Startup; ลบได้เฉพาะ userData/temp/โฟลเดอร์ที่เลือก/ไฟล์ที่โปรแกรมเขียนเอง/`.history` ของโปรเจกต์ที่เปิด/`.es-part`; `shell:open` ไม่เปิดโปรแกรม; output ของ FFmpeg ถูกตรวจ; ตำแหน่ง FFmpeg / AudioStage ต้องมาจาก dialog
+- ปิดโปรแกรม: kill FFmpeg ทุกตัว (`will-quit`), ถ้ามี export ค้างในคิวจะถามก่อน
+- **ตัวติดตั้ง 356 MB → 210 MB**: เหลือ `ffmpeg-static` ตัวเดียวใน dependencies (ที่เหลือ bundle อยู่ใน dist/ แล้ว จึงย้ายไป devDependencies → onnxruntime-node, sharp, node_modules ซ้ำไม่ติดไป), ไม่แพ็ก `*.map` / mogrt-test, แพ็ก source ของ FFmpeg อย่างเดียว (libvips ไม่ได้แจกแล้ว); ทดสอบ `release/win-unpacked/EditorStage.exe`: หน้าโหลด, version 3.1.0, MediaPipe (object detector) โหลด 0.7 s, onnxruntime-web wasm (21.6 MB) + Whisper ถอดเสียงได้
+- ใบอนุญาต: `collect_licenses` รวม license ของทุก package ที่ bundle ใน dist/ (98) + `licenses/models/MODELS.txt` (4 โมเดล: Selfie Segmenter / Face Landmarker / EfficientDet-Lite0 = Apache-2.0, Whisper base = MIT); FFmpeg 6.1.1 ตรงกับ `ffmpeg-6.1.1.tar.xz`
+- `test:e2e` ใช้ `electron` ทุก phase; README: `dist:mac` ต้อง build บน Mac
+
+### 8.6, 8.9 อื่นๆ (E17, E18, F2, F4, D5)
+- Project Settings > Scratch Disks เลือกโฟลเดอร์ Captured / Previews ได้จริง (บันทึกในโปรเจกต์); เสียงพากย์/Capture ถูกคัดลอกไปโฟลเดอร์ Captured ข้างโปรเจกต์ ลบ .webm ใน temp และสำเนาใน cache, path ใช้ตัวคั่นตามระบบ
+- Synchronize / Create Multi-Camera: ถ้าคลิปถูกแก้ระหว่างวิเคราะห์เสียง จะหยุดพร้อมข้อความ (ไม่ใช้ค่าเก่า)
+- Export Queue: ส่งงานซ้ำไปไฟล์เดียวกันจะถามก่อน (save dialog ถามเรื่องไฟล์มีอยู่แล้วอยู่แล้ว; ไฟล์เดิมถูกแทนเมื่อ export เสร็จเท่านั้น)
+- Remix ที่ยาวขึ้นดันคลิปถัดไปออก (ripple, รวม track ที่ sync-lock) แทนการเขียนทับ (`editing.rippleOpen`)
+
+#### ข้อจำกัด (Phase 8)
+- Undo history ยังไม่แยกต่อ sequence (สลับ sequence = History เริ่มใหม่) — D13
+- Guard ฝั่ง main ยังให้อ่านไฟล์ได้ทุกที่ และเขียนไฟล์ข้อมูล (ไม่ใช่โปรแกรม) ได้ทุกที่ เพราะ proxy / AudioStage Edits / caption sidecar เขียนข้างไฟล์ต้นฉบับ
+- โปรเจกต์ที่เปิดจาก Recent (ไม่ผ่าน dialog) ลบ object เก่าใน `.history` ไม่ได้จนกว่าจะอ่านไฟล์ (ได้สิทธิ์ตอนอ่าน .esproj) — ทำงานปกติ
+- ยังไม่ได้ code-sign ตัวติดตั้ง
+
+#### การทดสอบ (Phase 8)
+- `scripts/test_store.mjs`, `test_jobs.mjs` (Node แทน FFmpeg), `test_versions.mjs` (โฟลเดอร์จริงแทน main process), `test_guard.mjs`, เพิ่มใน `test_keys.mjs` / `test_tracks.mjs`
+- `scripts/e2e/phase8.cjs` 25/25: ซ่อน V2 แล้ว export/renderFrame เห็น V1, undo/redo/บันทึก hidden, Save/Undo/Redo dirty, In/Out + projectId ในไฟล์, Save ล้มเหลว, เปิดไฟล์เสีย + เปิด revision, encoder ตายแล้ว end ไม่ค้าง, export ที่ยกเลิกไม่เหลือไฟล์, ไฟล์เดิมไม่ถูกทับ, guard (.bat, ลบไฟล์, เปิด .exe, FFmpeg เขียน .cmd, AudioStage path), window.open / navigation, NumInput, Space กับ checkbox
 
 ## รายงานสรุป — Definition of Done
 
