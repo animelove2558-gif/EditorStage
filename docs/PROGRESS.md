@@ -370,7 +370,7 @@ File > Export > **AAF (Embedded Audio)...** (`file.exportAAF`) เขียน A
 
 ## Phase 8 — แก้จากการตรวจ 2–3 พ.ย. 2026 (`PROMPT_FIX_AUDIT_2026-11-02.md`) — ✅ เวอร์ชัน 3.1.0
 
-เริ่มใช้ git (commit แรก = สภาพก่อนแก้ทั้งหมด) และ commit ทุกกลุ่มที่แก้ (`[Phase 8.x]`). ผลทดสอบ: `npm test` 506/506 (19 ชุด, เพิ่ม `test_store` 34, `test_jobs` 15, `test_versions` 30, `test_guard` 30, `test_keys` +11, `test_tracks` +5), `check_commands` 0 missing / 0 stubs, e2e ทุก phase ผ่าน (รวม `scripts/e2e/phase8.cjs` 25/25 ใหม่)
+เริ่มใช้ git (commit แรก = สภาพก่อนแก้ทั้งหมด) และ commit ทุกกลุ่มที่แก้ (`[Phase 8.x]`). ผลทดสอบ: `npm test` 508/508 (19 ชุด, เพิ่ม `test_store` 36, `test_jobs` 15, `test_versions` 30, `test_guard` 30, `test_keys` +11, `test_tracks` +5), `check_commands` 0 missing / 0 stubs, e2e ทุก phase ผ่าน (รวม `scripts/e2e/phase8.cjs` 25/25 ใหม่)
 
 ### 8.1–8.3 ข้อมูลผู้ใช้ไม่หาย (E1–E11, F1, F3)
 - **Saved state แบบ Premiere** (`store.js`): ทุกสถานะที่ undo ได้มี revision id; `dirty` = id ปัจจุบัน ≠ id ตอน Save → Undo หลัง Save = ยังไม่บันทึก, Redo กลับมาที่จุด Save = บันทึกแล้ว; "*" ใน title bar ตามจริง; การเปลี่ยนที่ไม่ใช่ undo แต่ถูกบันทึกในไฟล์ (bins, ชื่อโปรเจกต์, scratch disks, In/Out, sequence ใหม่, restore revision) ก็ทำให้ dirty (`markDirty`)

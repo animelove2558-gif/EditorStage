@@ -200,7 +200,7 @@ E1 → E2 → E4 → E5 → E10 → E3 → E6 → E7 → E8 → E9 → E11 → E
 
 ทำตามลำดับแนะนำ แล้วจึง D บางข้อ. มี git แล้ว (commit แรก = สภาพก่อนแก้) และ commit แยกทุกกลุ่ม (`[Phase 8.1]` … `[Phase 8.10]`). รายละเอียดอยู่ใน `docs/PROGRESS.md` หัวข้อ "Phase 8 — แก้จากการตรวจ 2–3 พ.ย. 2026"
 
-**ผลทดสอบ:** `npm test` 506/506 (19 ชุด; ใหม่: `test_store` 34, `test_jobs` 15, `test_versions` 30, `test_guard` 30; เพิ่มใน `test_keys` และ `test_tracks`), `check_commands` 0 missing / 0 stubs, `npm run build` ไม่มี warning, e2e ทุก phase ผ่าน (phase1–7c + phase8 ใหม่ 25/25; รันทีละ phase ตามล็อก Electron)
+**ผลทดสอบ:** `npm test` 508/508 (19 ชุด; ใหม่: `test_store` 36, `test_jobs` 15, `test_versions` 30, `test_guard` 30; เพิ่มใน `test_keys` และ `test_tracks`), `check_commands` 0 missing / 0 stubs, `npm run build` ไม่มี warning, e2e ทุก phase ผ่าน (phase1–7c + phase8 ใหม่ 25/25; รันทีละ phase ตามล็อก Electron)
 
 **ตัวติดตั้ง:** `release/EditorStage Setup 3.1.0.exe` = 210 MB (3.0.0 = 356 MB); `app.asar` 451 → 210 MB, `app.asar.unpacked` 342 → 80 MB (เหลือ ffmpeg-static), source-code 39 → 10 MB. เปิด `release/win-unpacked/EditorStage.exe` (profile แยก) แล้ว: หน้าโหลด, version 3.1.0, MediaPipe โหลดได้, onnxruntime-web wasm + Whisper ถอดเสียงได้
 
