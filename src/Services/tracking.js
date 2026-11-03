@@ -93,11 +93,13 @@ export async function trackMask(clipId, maskId, dir, count = Infinity, mode = 'f
   edit(`Track Mask ${dir > 0 ? 'Forward' : 'Backward'}`, ({ seq: sq }) => {
     const c = sq.clips.find((x) => x.id === clipId); const mk = c.masks.find((x) => x.id === maskId);
     const at = (t) => mapFor(c, media, sq, t - c.start);
-    const steps = [{ t: t0, map: (p) => p, scale: 1 }, ...r.steps];
+    const steps = [{ t: t0, map: (p) => p, scale: 1, angle: 0 }, ...r.steps];
     const ts = steps.map((x) => x.t - c.start); const lo = Math.min(...ts), hi = Math.max(...ts);
     if (ell) {
       mk.params.center = replaceKeys(mk.params.center, steps.map((x) => ({ t: x.t - c.start, v: at(x.t).toSeq(x.map(srcCenter)) })), lo, hi);
       if (mode === 'full') mk.params.size = replaceKeys(mk.params.size, steps.map((x) => ({ t: x.t - c.start, v: [mp.size[0] * x.scale, mp.size[1] * x.scale] })), lo, hi);
+      // Position & Rotation / Position, Scale & Rotation: the ellipse turns with the object (degrees, clockwise like Motion)
+      if (mode !== 'position') { const r0 = mp.rotation || 0; mk.params.rotation = replaceKeys(mk.params.rotation || { v: r0, keys: null }, steps.map((x) => ({ t: x.t - c.start, v: r0 + ((x.angle || 0) * 180) / Math.PI })), lo, hi); }
     } else mk.params.points = replaceKeys(mk.params.points, steps.map((x) => ({ t: x.t - c.start, v: srcShape.map((p) => at(x.t).toSeq(x.map(p))) })), lo, hi);
   });
   return { tracked: r.steps.length, wanted: r.wanted };

@@ -112,4 +112,21 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   ok('clicking the empty slots patches V1 -> V2 and A1 -> A2; Overwrite lands there', J(r.tracks) === J(['A2', 'V2']), J(r.tracks));
   ok('clicking the A1 indicator leaves the sound out of the next edit (picture only)', r.off === false && J(r.later) === J(['V2']), J(r));
 
+  console.log('D6 ellipse mask rotation');
+  const maskPx = async (rot) => js(`T.fresh(160, 90); const id = E.gfx.addGraphic('rect', 0, { x: 0.5, y: 0.5, w: 1.2, h: 1.2, color: '#ffffff', stroke: false });
+    T.patch(id, (c) => { c.dur = 2; c.masks = [{ id: 'm', type: 'ellipse', enabled: true, params: { center: { v: [0.5, 0.5], keys: null }, size: { v: [0.8, 0.1], keys: null }, rotation: { v: ${rot}, keys: null }, feather: { v: 0, keys: null }, opacity: { v: 100, keys: null }, invert: { v: false, keys: null } } }]; });
+    const img = await E.exporter.renderFrame(0.5, 160, 90); const p = (x, y) => img.data[(y * 160 + x) * 4]; return { side: p(30, 45), top: p(80, 8) };`);
+  const flat = await maskPx(0); const turned = await maskPx(90);
+  ok('control: a wide flat ellipse covers the sides, not the top', flat.side > 200 && flat.top < 40, J(flat));
+  ok('rotated 90 degrees it stands upright (top covered, sides not)', turned.side < 40 && turned.top > 200, J(turned));
+  // a still picture (one test-pattern frame) turning clockwise at 0.5 rad/s
+  const still = make('still.png', ['-f', 'lavfi', '-i', 'testsrc=s=200x200:r=1:d=1', '-frames:v', '1']);
+  const spin = make('spin.mp4', ['-loop', '1', '-i', still, '-vf', "rotate=a='t*0.5':c=black,format=yuv420p", '-r', '30', '-t', '2', '-c:v', 'libx264', '-g', '1']);
+  r = await js(`T.fresh(200, 200); const m = await T.imp(${J(spin)}); const [id] = T.place(m, 0, 'V1'); E.store.set({ playhead: 0 });
+    T.patch(id, (c) => { c.masks = [{ id: 'm', type: 'ellipse', enabled: true, params: { center: { v: [0.5, 0.5], keys: null }, size: { v: [0.5, 0.5], keys: null }, rotation: { v: 0, keys: null }, feather: { v: 10, keys: null }, opacity: { v: 100, keys: null }, invert: { v: false, keys: null } } }]; });
+    const res = await E.tracking.trackMask(id, 'm', 1, 31, 'rotation');
+    const rot = T.clip(id).masks[0].params.rotation; const at1 = E.params.evalParam(rot, 1);
+    return { res, keys: (rot.keys || []).length, at1 };`);
+  ok('Track Forward (Position & Rotation) keyframes the ellipse rotation', r.keys >= 20, J(r));
+  ok('...turning with the object (0.5 rad = 28.6 degrees clockwise after 1 s)', Math.abs(r.at1 - 28.6) < 8, J(r));
 });

@@ -140,7 +140,7 @@ function ParamGroup({ clip, defs, store, label, dims, ensure, applyTo, local, pl
 
 const MASK_NAMES = { ellipse: 'Ellipse Mask', polygon: '4-point Polygon Mask', bezier: 'Free Draw Mask' };
 const maskDefs = (m) => (m.type === 'ellipse'
-  ? [{ id: 'center', label: 'Center', type: 'point' }, { id: 'size', label: 'Size', type: 'point' }]
+  ? [{ id: 'center', label: 'Center', type: 'point' }, { id: 'size', label: 'Size', type: 'point' }, { id: 'rotation', label: 'Rotation', type: 'slider', min: -360, max: 360, step: 0.1 }]
   : m.params.points.v.map((_, i) => ({ id: `pt${i}`, label: `Point ${i + 1}`, type: 'point' })))
   .concat([{ id: 'feather', label: 'Mask Feather', type: 'slider', min: 0, max: 100, step: 0.5 }, { id: 'opacity', label: 'Mask Opacity', type: 'slider', min: 0, max: 100 }, { id: 'invert', label: 'Inverted', type: 'checkbox', noAnim: true }]);
 
@@ -151,7 +151,7 @@ function MaskTrackBar({ clip, mk, local }) {
   const pathKey = mk.type === 'ellipse' ? 'center' : 'points';
   const animated = !!mk.params[pathKey]?.keys;
   const go = (dir, count) => trackMask(clip.id, mk.id, dir, count, method).then((r) => { if (r.tracked < r.wanted) notifyEC(`Tracked ${r.tracked} of ${r.wanted} frames (the object was lost)`); }).catch((e) => notifyEC(e.message));
-  const toggle = () => mutate('Mask Path animation', clip.id, (c) => { const x = c.masks.find((q) => q.id === mk.id); for (const k of mk.type === 'ellipse' ? ['center', 'size'] : ['points']) { const p = x.params[k]; x.params[k] = p.keys ? { v: evalParam(p, local), keys: null } : { v: p.v, keys: [{ t: local, v: p.v }] }; } });
+  const toggle = () => mutate('Mask Path animation', clip.id, (c) => { const x = c.masks.find((q) => q.id === mk.id); for (const k of mk.type === 'ellipse' ? ['center', 'size', 'rotation'] : ['points']) { const p = x.params[k] || { v: 0, keys: null }; x.params[k] = p.keys ? { v: evalParam(p, local), keys: null } : { v: p.v, keys: [{ t: local, v: p.v }] }; } });
   return (
     <div className="param masktrack">
       <label>Mask Path</label>
@@ -179,7 +179,7 @@ export function createMask(clipId, type, points) {
     const base = { feather: { v: 10, keys: null }, opacity: { v: 100, keys: null }, invert: { v: false, keys: null } };
     const pts = points || (type === 'ellipse' ? null : [[0.3, 0.3], [0.7, 0.3], [0.7, 0.7], [0.3, 0.7]]);
     const params = type === 'ellipse'
-      ? { ...base, center: { v: [0.5, 0.5], keys: null }, size: { v: [0.5, 0.5], keys: null } }
+      ? { ...base, center: { v: [0.5, 0.5], keys: null }, size: { v: [0.5, 0.5], keys: null }, rotation: { v: 0, keys: null } }
       : { ...base, points: { v: pts, keys: null } };
     c.masks.push({ id: Math.random().toString(36).slice(2, 8), type, enabled: true, params });
   });

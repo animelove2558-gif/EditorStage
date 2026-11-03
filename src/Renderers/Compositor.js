@@ -49,11 +49,12 @@ const FINAL_FRAG = `#version 300 es
 precision highp float;
 in vec2 uv; out vec4 o;
 uniform sampler2D u_tex; uniform float u_opacity; uniform float u_fa;
-uniform int u_mask; uniform vec2 u_mc; uniform vec2 u_ms; uniform float u_mf; uniform float u_mi; uniform float u_mo; uniform vec2 u_poly[16]; uniform int u_np;
+uniform int u_mask; uniform vec2 u_mc; uniform vec2 u_ms; uniform float u_mr; uniform float u_mf; uniform float u_mi; uniform float u_mo; uniform vec2 u_poly[16]; uniform int u_np;
 float cross2(vec2 a, vec2 b){ return a.x*b.y-a.y*b.x; }
 void main(){
   vec4 c=texture(u_tex,uv); float m=1.;
-  if(u_mask==1){ vec2 d=(uv-u_mc)/max(u_ms*0.5,vec2(0.0001)); float e=length(d); m=1.-smoothstep(1.-u_mf,1.,e); }
+  // ellipse: rotated by u_mr (radians, clockwise on screen) in square (aspect-corrected) units
+  if(u_mask==1){ vec2 p=(uv-u_mc)*vec2(u_fa,1.); float cr=cos(u_mr), sr=sin(u_mr); vec2 q=vec2(cr*p.x-sr*p.y, sr*p.x+cr*p.y); vec2 d=q/max(u_ms*0.5*vec2(u_fa,1.),vec2(0.0001)); float e=length(d); m=1.-smoothstep(1.-u_mf,1.,e); }
   else if(u_mask==2){ bool inside=false; float dist=1e9; for(int i=0;i<16;i++){ if(i>=u_np) break; vec2 a=u_poly[i]; vec2 b=u_poly[(i+1)%u_np]; if(((a.y>uv.y)!=(b.y>uv.y)) && (uv.x<(b.x-a.x)*(uv.y-a.y)/(b.y-a.y)+a.x)) inside=!inside; vec2 e=b-a; float h=clamp(dot(uv-a,e)/max(dot(e,e),1e-8),0.,1.); dist=min(dist,length(uv-a-e*h)); } m=inside?(u_mf<=0.?1.:smoothstep(0.,u_mf*0.5,dist)):(u_mf<=0.?0.:1.-smoothstep(0.,u_mf*0.5,dist)); m=inside?m:m*0.; }
   if(u_mask!=0){ if(u_mi>0.5) m=1.-m; m=mix(1.,m,u_mo); }
   o=vec4(c.rgb,c.a*u_opacity*m);
@@ -474,7 +475,7 @@ export class Compositor {
     this.i1(fin, 'u_mask', mask ? (mask.type === 'ellipse' ? 1 : 2) : 0);
     if (mask) {
       const mp = resolveParams(mask.params, local);
-      if (mask.type === 'ellipse') { this.f2(fin, 'u_mc', [mp.center[0], 1 - mp.center[1]]); this.f2(fin, 'u_ms', [mp.size[0], mp.size[1]]); }
+      if (mask.type === 'ellipse') { this.f2(fin, 'u_mc', [mp.center[0], 1 - mp.center[1]]); this.f2(fin, 'u_ms', [mp.size[0], mp.size[1]]); this.f1(fin, 'u_mr', ((mp.rotation || 0) * Math.PI) / 180); }
       else { const pts = mp.points.slice(0, 16); const arr = new Float32Array(32); pts.forEach((p, i) => { arr[i * 2] = p[0]; arr[i * 2 + 1] = 1 - p[1]; }); gl.uniform2fv(this.loc(fin, 'u_poly'), arr); this.i1(fin, 'u_np', pts.length); }
       this.f1(fin, 'u_mf', mp.feather / 100); this.f1(fin, 'u_mi', mp.invert ? 1 : 0); this.f1(fin, 'u_mo', mp.opacity / 100);
     }
