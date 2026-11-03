@@ -129,4 +129,20 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
     return { res, keys: (rot.keys || []).length, at1 };`);
   ok('Track Forward (Position & Rotation) keyframes the ellipse rotation', r.keys >= 20, J(r));
   ok('...turning with the object (0.5 rad = 28.6 degrees clockwise after 1 s)', Math.abs(r.at1 - 28.6) < 8, J(r));
+
+  console.log('D7 Color Match: RGB Curves, face model');
+  const warmImg = make('warm_ref.png', ['-f', 'lavfi', '-i', 'gradients=s=160x90:c0=0x3a1a08:c1=0xf0b070:x0=0:y0=0:x1=160:y1=90:n=2', '-frames:v', '1']);
+  const coolImg = make('cool_tgt.png', ['-f', 'lavfi', '-i', 'gradients=s=160x90:c0=0x081830:c1=0x90b0f0:x0=0:y0=0:x1=160:y1=90:n=2', '-frames:v', '1']);
+  r = await js(`T.fresh(160, 90); const a = await T.imp(${J(coolImg)}); const b = await T.imp(${J(warmImg)});
+    const [ta] = T.place(a, 0, 'V1'); const [tb] = T.place(b, 10, 'V1'); E.store.set({ playhead: 1 });
+    const mean = async (t) => { const img = await E.exporter.renderFrame(t, 160, 90); const m = [0, 0, 0]; for (let i = 0; i < img.data.length; i += 4) for (let k = 0; k < 3; k++) m[k] += img.data[i + k]; return m.map((v) => v / (img.data.length / 4)); };
+    const ref = await mean(11), before = await mean(1);
+    const v = await E.colorAuto.applyColorMatch(ta, tb, 11, true, true);
+    const after = await mean(1); const lu = T.clip(ta).lumetri;
+    return { ref, before, after, curves: !!lu.curves && lu.curves.r.length > 2, label: E.store.getState().history.at(-1).label, face: v.usedFaceModel };`);
+  const dist = (x) => Math.hypot(...x.map((v, i) => v - r.ref[i]));
+  ok('Color Match (RGB Curves) writes curves to the clip as one step', r.curves && r.label === 'Apply Color Match', J(r));
+  ok('...and the matched clip looks like the reference (mean color)', dist(r.after) < dist(r.before) * 0.25, J({ ref: r.ref, before: r.before, after: r.after }));
+  r = await js(`const { faceRegion } = E.colorAuto; const c = document.createElement('canvas'); c.width = 64; c.height = 36; const g = c.getContext('2d'); g.fillStyle = '#d9a080'; g.fillRect(0, 0, 64, 36); let model = 'ok'; try { await E.vision.detectFace(c); } catch (e) { model = String(e); } return { r: await faceRegion(c, 16, 9), model };`);
+  ok('the face model loads and finds no face in a skin-coloured block (no false skin match)', r.r === null && r.model === 'ok', J(r));
 });

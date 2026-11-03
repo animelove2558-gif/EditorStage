@@ -1,6 +1,9 @@
 // Lumetri automatic color: Auto Tone, Auto Color (white balance) and Color Match (to a reference frame, optionally weighting
 // skin tones). Results are ordinary Lumetri slider values (exposure, contrast, temperature, tint, saturation), fitted against
 // a CPU model of the same Basic Correction math the shader runs, so the sliders stay editable and preview = export.
+// Color Match can also write RGB Curves (per-channel histogram matching), and its face weighting can use the face model
+// (MediaPipe Face Landmarker, Services/vision.js): the skin of the detected face instead of every skin-coloured pixel.
+import { curveLUT } from '../Core/curves.js';
 
 /** sRGB 0..1 -> CIE Lab (D65). */
 export function rgbToLab(r, g, b) {
@@ -16,15 +19,20 @@ export const isSkin = (r, g, b) => { const cb = 128 - 37.797 * r - 74.203 * g + 
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const sstep = (e0, e1, x) => { const t = clamp01((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
-/** CPU model of the Lumetri Basic Correction + wheel gains (same order as LUMETRI_BODY). p: { exposure, temperature, tint, highlights, shadows, whites, blacks, contrast, gainR/G/B, saturation }. */
+/** CPU model of the Lumetri Basic Correction + RGB Curves + wheel gains (same order as LUMETRI_BODY). p: { exposure, temperature, tint, highlights, shadows, whites, blacks, contrast, curves, gainR/G/B, saturation }. */
 export function simulate(px, p) {
-  const out = new Float32Array(px.length); const ex = Math.pow(2, p.exposure || 0), k = 1 + (p.contrast || 0) / 100, sat = (p.saturation ?? 100) / 100;
+  const out = new Float32Array(px.length);
+  const cv = p.curves ? ['master', 'r', 'g', 'b'].map((k) => curveLUT(p.curves[k] || [[0, 0], [1, 1]])) : null;
+  const look = (lut, x) => { const f = clamp01(x) * 255, i = Math.min(254, Math.floor(f)), t = f - i; return lut[i] * (1 - t) + lut[i + 1] * t; }; const ex = Math.pow(2, p.exposure || 0), k = 1 + (p.contrast || 0) / 100, sat = (p.saturation ?? 100) / 100;
   for (let i = 0; i < px.length; i += 3) {
     let r = px[i] * ex + (p.temperature || 0) / 400, g = px[i + 1] * ex + (p.tint || 0) / 400, b = px[i + 2] * ex - (p.temperature || 0) / 400;
     const l = 0.2126 * r + 0.7152 * g + 0.0722 * b; const tone = ((p.highlights || 0) / 200) * sstep(0.5, 1, l) + ((p.shadows || 0) / 200) * (1 - sstep(0, 0.5, l)) + ((p.whites || 0) / 300) * sstep(0.75, 1, l) + ((p.blacks || 0) / 300) * (1 - sstep(0, 0.25, l));
     r += tone; g += tone; b += tone;
-    // contrast, then Color Wheels gain (multiplicative per channel); the shader clamps only before the saturation step
+    // contrast, then RGB Curves (master, then per channel), then Color Wheels gain (multiplicative per channel); the shader clamps only before the saturation step
+    if (cv) { r = Math.max(0, (r - 0.5) * k + 0.5); g = Math.max(0, (g - 0.5) * k + 0.5); b = Math.max(0, (b - 0.5) * k + 0.5); r = look(cv[1], look(cv[0], r)); g = look(cv[2], look(cv[0], g)); b = look(cv[3], look(cv[0], b)); r = clamp01(r * (1 + (p.gainR || 0) / 200)); g = clamp01(g * (1 + (p.gainG || 0) / 200)); b = clamp01(b * (1 + (p.gainB || 0) / 200)); }
+    else {
     r = clamp01(Math.max(0, (r - 0.5) * k + 0.5) * (1 + (p.gainR || 0) / 200)); g = clamp01(Math.max(0, (g - 0.5) * k + 0.5) * (1 + (p.gainG || 0) / 200)); b = clamp01(Math.max(0, (b - 0.5) * k + 0.5) * (1 + (p.gainB || 0) / 200));
+    }
     if (sat !== 1) { const v = Math.max(r, g, b), mn = Math.min(r, g, b), s = v > 1e-10 ? (v - mn) / v : 0; const f = s > 0 ? Math.min(sat, 1 / s) : sat; r = v - (v - r) * f; g = v - (v - g) * f; b = v - (v - b) * f; }
     out[i] = r; out[i + 1] = g; out[i + 2] = b;
   }
@@ -76,10 +84,10 @@ export function autoColor(px, tone = {}) {
  * Color Match: Basic Correction + highlight wheel (gain) values that give the target frame the reference frame's Lab statistics.
  * faces: match the skin-tone pixels' color (when both frames show enough skin) instead of the whole-frame average.
  */
-export function colorMatch(target, reference, { faces = true } = {}) {
-  const R = labStats(reference); const skin = (px) => { const s = []; for (let i = 0; i < px.length; i += 3) s.push(isSkin(px[i], px[i + 1], px[i + 2])); return s; };
-  let tSel = null, rSkin = null;
-  if (faces) { const ts = skin(target), rs = skin(reference); const share = (s) => s.filter(Boolean).length / s.length; if (share(ts) > 0.02 && share(rs) > 0.02) { tSel = ts; rSkin = labStats(reference, rs); } }
+export function colorMatch(target, reference, { faces = true, curves = false, faceBoxes = null } = {}) {
+  const R = labStats(reference); const skin = (px, box) => { const s = []; for (let i = 0; i < px.length; i += 3) s.push(isSkin(px[i], px[i + 1], px[i + 2])); return box ? s.map((v, j) => v && box[j]) : s; };
+  let tSel = null, rSkin = null; const fb = faceBoxes || {};
+  if (faces) { const ts = skin(target, fb.target), rs = skin(reference, fb.reference); const share = (s) => s.filter(Boolean).length / s.length; if (share(ts) > 0.02 && share(rs) > 0.02) { tSel = ts; rSkin = labStats(reference, rs); } }
   const p = fit((q) => {
     const sim = simulate(target, { ...BASE, ...q }); const s = labStats(sim);
     let c = (s.L - R.L) ** 2 + (s.Lsd - R.Lsd) ** 2 + 0.25 * ((s.p01 - R.p01) ** 2 + (s.p99 - R.p99) ** 2) + 0.5 * (s.C - R.C) ** 2;
@@ -87,7 +95,25 @@ export function colorMatch(target, reference, { faces = true } = {}) {
     else c += (s.a - R.a) ** 2 + (s.b - R.b) ** 2;
     return c;
   }, { exposure: 0, contrast: 0, gainR: 0, gainG: 0, gainB: 0, saturation: 100 }, { exposure: [-3, 3], contrast: [-60, 100], gainR: [-100, 100], gainG: [-100, 100], gainB: [-100, 100], saturation: [0, 200] }, 80);
-  return { ...p, usedSkin: !!rSkin };
+  if (!curves) return { ...p, usedSkin: !!rSkin, usedFaceModel: !!(rSkin && fb.target && fb.reference) };
+  // Curves: keep the fitted exposure / contrast, match each channel's histogram with an RGB curve, then refit saturation
+  // (and, for faces, a small highlight gain so the skin lands on the reference's skin)
+  const base = { ...BASE, exposure: p.exposure, contrast: p.contrast };
+  const c = { ...matchCurves(simulate(target, base), reference) };
+  let q = fit((x) => { const s = labStats(simulate(target, { ...base, curves: c, ...x })); return (s.C - R.C) ** 2; }, { saturation: 100 }, { saturation: [0, 200] }, 30);
+  if (rSkin) q = fit((x) => { const k = labStats(simulate(target, { ...base, curves: c, ...q, ...x }), tSel); const s = labStats(simulate(target, { ...base, curves: c, ...q, ...x })); return 2 * ((k.a - rSkin.a) ** 2 + (k.b - rSkin.b) ** 2) + (s.a - R.a) ** 2 + (s.b - R.b) ** 2; }, { ...q, gainR: 0, gainG: 0, gainB: 0 }, { gainR: [-40, 40], gainG: [-40, 40], gainB: [-40, 40] }, 40);
+  return { exposure: p.exposure, contrast: p.contrast, gainR: 0, gainG: 0, gainB: 0, ...q, curves: c, usedSkin: !!rSkin, usedFaceModel: !!(rSkin && fb.target && fb.reference) };
+}
+/** RGB Curves that give `src` the per-channel distribution of `ref` (both packed rgb 0..1): 9 points from matching quantiles. */
+export function matchCurves(src, ref) {
+  const chan = (px, o) => { const a = new Float32Array(px.length / 3); for (let i = o, j = 0; i < px.length; i += 3, j++) a[j] = px[i]; return a.sort(); };
+  const q = (a, t) => a[Math.min(a.length - 1, Math.max(0, Math.round(t * (a.length - 1))))];
+  const curve = (o) => {
+    const s = chan(src, o), r = chan(ref, o); const pts = [[0, 0]];
+    for (const t of [0.02, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 0.98]) { const x = q(s, t), y = q(r, t); const last = pts[pts.length - 1]; if (x > last[0] + 0.02 && x < 0.99) pts.push([+x.toFixed(4), +Math.max(last[1], y).toFixed(4)]); }
+    pts.push([1, +Math.max(pts[pts.length - 1][1], q(r, 0.999)).toFixed(4)]); return pts;
+  };
+  return { master: [[0, 0], [1, 1]], r: curve(0), g: curve(1), b: curve(2), hs: [[0, 0.5], [1, 0.5]] };
 }
 /** ImageData (RGBA 0..255) -> packed Float32 rgb 0..1. */
 export const toRgb = (img) => { const d = img.data; const out = new Float32Array((d.length / 4) * 3); for (let i = 0, j = 0; i < d.length; i += 4, j += 3) { out[j] = d[i] / 255; out[j + 1] = d[i + 1] / 255; out[j + 2] = d[i + 2] / 255; } return out; };

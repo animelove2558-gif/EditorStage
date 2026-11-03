@@ -8,8 +8,8 @@ import { toRgb, simulate } from './colorMatch';
 import { runDsp } from './dsp';
 
 const once = (el, ev) => new Promise((r) => el.addEventListener(ev, r, { once: true }));
-/** The clip's source frame at sequence time t (before any grading), as packed rgb floats (about 96 px wide). */
-export async function clipFrame(clip, t) {
+/** The clip's source frame at sequence time t (before any grading), as packed rgb floats (about 96 px wide). withCanvas: also the frame canvas. */
+export async function clipFrame(clip, t, withCanvas = false) {
   const m = clip && clip.mediaId && mediaById(clip.mediaId);
   if (!m || (m.kind !== 'video' && m.kind !== 'image')) throw new Error('Select a video or still clip');
   const el = elementForMedia(m, `color:${clip.id}`); if (!el) throw new Error('The media is not available');
@@ -23,9 +23,21 @@ export async function clipFrame(clip, t) {
   if (!w0 || !h0) throw new Error('No frame to analyse');
   const w = 96, h = Math.max(8, Math.round((96 * h0) / w0));
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: true });
-  g.drawImage(el, 0, 0, w, h); return toRgb(g.getImageData(0, 0, w, h));
+  g.drawImage(el, 0, 0, w, h); const px = toRgb(g.getImageData(0, 0, w, h));
+  if (!withCanvas) return px;
+  const big = document.createElement('canvas'); const k = Math.min(1, 640 / w0); big.width = Math.round(w0 * k); big.height = Math.round(h0 * k); big.getContext('2d').drawImage(el, 0, 0, big.width, big.height);
+  return { px, w, h, canvas: big };
 }
-const KEYS = ['exposure', 'contrast', 'whites', 'blacks', 'temperature', 'tint', 'gainR', 'gainG', 'gainB', 'saturation'];
+/** Per-pixel mask (w x h) of the face found by the face model in `canvas` (its landmark hull, a little widened), or null. */
+export async function faceRegion(canvas, w, h) {
+  let lm = null; try { const { detectFace } = await import('./vision'); lm = await detectFace(canvas); } catch { return null; }
+  if (!lm || lm.length < 10) return null;
+  const xs = lm.map((p) => p[0]), ys = lm.map((p) => p[1]); const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = ((x1 - x0) / 2) * 1.1, ry = ((y1 - y0) / 2) * 1.1; const out = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const u = ((x + 0.5) / w - cx) / rx, v = ((y + 0.5) / h - cy) / ry; out.push(u * u + v * v <= 1); }
+  return out;
+}
+const KEYS = ['exposure', 'contrast', 'whites', 'blacks', 'temperature', 'tint', 'gainR', 'gainG', 'gainB', 'saturation', 'curves'];
 function apply(clipId, label, vals) {
   edit(label, ({ seq }) => {
     const c = seq.clips.find((x) => x.id === clipId);
@@ -44,14 +56,18 @@ export async function autoCorrect(clipId, mode = 'auto') {
   return v;
 }
 /** Color Match: the clip at the playhead takes the look of `refClipId` at sequence time `refTime`. */
-export async function applyColorMatch(clipId, refClipId, refTime, faces = true) {
+export async function applyColorMatch(clipId, refClipId, refTime, faces = true, curves = false) {
   const s = getState(); const c = s.sequence.clips.find((x) => x.id === clipId), r = s.sequence.clips.find((x) => x.id === refClipId);
   if (!r) throw new Error('Choose a reference clip');
-  const target = await clipFrame(c, playheadIn(c));
+  const tf = await clipFrame(c, playheadIn(c), true); const target = tf.px;
   const t = refTime != null && refTime >= r.start && refTime < r.start + r.dur ? refTime : r.start + r.dur / 2;
-  let reference = await clipFrame(r, t);
-  if (r.lumetri) reference = simulate(reference, { ...LUMETRI_DEFAULTS, ...r.lumetri }); // the reference's own Basic Correction is part of its look
-  const v = await runDsp('colorMatch', { target, reference, faces });
+  const rf = await clipFrame(r, t, true); let reference = rf.px;
+  if (r.lumetri) reference = simulate(reference, { ...LUMETRI_DEFAULTS, ...r.lumetri }); // the reference's own grade is part of its look
+  // Face Detection: the face model finds the face in both frames; skin is matched inside it (else every skin-coloured pixel)
+  let faceBoxes = null;
+  if (faces) { const a = await faceRegion(tf.canvas, tf.w, tf.h), b = await faceRegion(rf.canvas, rf.w, rf.h); if (a && b) faceBoxes = { target: a, reference: b }; }
+  const v = await runDsp('colorMatch', { target, reference, faces, curves, faceBoxes });
+  if (!curves) delete v.curves;
   apply(clipId, 'Apply Color Match', v);
   return v;
 }

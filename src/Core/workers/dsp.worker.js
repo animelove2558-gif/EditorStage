@@ -11,7 +11,7 @@ const OPS = {
   autoTone: (a) => { const t = autoTone(a.px); return { ...t, ...autoColor(a.px, t) }; },
   autoToneOnly: (a) => autoTone(a.px),
   autoColor: (a) => autoColor(a.px),
-  colorMatch: (a) => colorMatch(a.target, a.reference, { faces: a.faces }),
+  colorMatch: (a) => colorMatch(a.target, a.reference, { faces: a.faces, curves: a.curves, faceBoxes: a.faceBoxes }),
   remixAnalyze: (a, progress) => analyzeMusic(a.pcm, a.sr, progress), // Remix: beats + per-beat features of a music file
   remixRender: (a) => renderRemix(a.chans, a.sr, a.segments, a.xfade, a.pre, a.n, a.srcOffset),
 };

@@ -404,14 +404,14 @@ export function Lumetri() {
   const seq = useStore((s) => s.sequence);
   const clip = seq.clips.find((c) => c.id === sel[0] && seq.tracks.find((t) => t.id === c.track)?.kind === 'video');
   const [lutErr, setLutErr] = React.useState('');
-  const [busy, setBusy] = React.useState(''); const [ref, setRef] = React.useState({ id: '', t: null, faces: true });
+  const [busy, setBusy] = React.useState(''); const [ref, setRef] = React.useState({ id: '', t: null, faces: true, curves: false });
   const cmp = useStore((s) => s.compare);
   if (!clip) return <Empty>Select a video clip to color-correct it</Empty>;
   const work = (label, fn) => { setBusy(label); setLutErr(''); fn().catch((e) => setLutErr(String(e.message || e))).finally(() => setBusy('')); };
   // Color Match follows the Comparison View: in Shot comparison its reference frame is the match reference (Premiere)
   const shot = cmp?.on && cmp.kind === 'shot' ? shotClipAt(seq, cmp.refTime) : null;
   const viewRef = shot && shot.mediaId && !shot.asAudio && shot.id !== clip.id ? shot : null;
-  const matchRef = viewRef ? { id: viewRef.id, t: cmp.refTime, faces: ref.faces } : ref;
+  const matchRef = viewRef ? { id: viewRef.id, t: cmp.refTime, faces: ref.faces, curves: ref.curves } : ref;
   const refMid = (r) => (r.t != null ? r.t : (() => { const c = seq.clips.find((x) => x.id === r.id); return c ? c.start + c.dur / 2 : getState().playhead; })());
   const openCompare = () => run('view.comparisonView', { on: true, kind: 'shot', ...(ref.id ? { refTime: refMid(ref) } : {}) });
   const refs = seq.clips.filter((c) => c.id !== clip.id && c.mediaId && !c.asAudio && seq.tracks.find((t) => t.id === c.track)?.kind === 'video');
@@ -451,8 +451,9 @@ export function Lumetri() {
           <div className="param"><label>Reference</label><select value={ref.id} onChange={(e) => setRef({ ...ref, id: e.target.value })}><option value="">Choose a clip…</option>{refs.map((c) => <option key={c.id} value={c.id}>{c.track} · {c.name}</option>)}</select></div>
           <div className="param"><label>Reference frame</label><span className="dim">{ref.t == null ? 'middle of the clip' : `${ref.t.toFixed(2)} s`}</span><button title="Use the frame at the playhead as the reference" onClick={() => setRef({ ...ref, t: getState().playhead })}>Set from playhead</button></div>
         </>}
-        <div className="param"><label>Face Detection</label><input type="checkbox" checked={ref.faces} onChange={(e) => setRef({ ...ref, faces: e.target.checked })} /><span className="dim">match skin tones</span></div>
-        <div className="param"><label /><button disabled={!!busy || !matchRef.id} title="Match the clip at the playhead to the reference frame (sets Basic Correction sliders)" onClick={() => work('Apply Match', async () => { await applyColorMatch(clip.id, matchRef.id, matchRef.t, matchRef.faces); if (!getState().compare?.on) openCompare(); })}>Apply Match</button></div>
+        <div className="param"><label>Face Detection</label><input type="checkbox" checked={ref.faces} onChange={(e) => setRef({ ...ref, faces: e.target.checked })} /><span className="dim">match skin tones (face model)</span></div>
+        <div className="param"><label>Match With</label><select value={ref.curves ? 'curves' : 'basic'} onChange={(e) => setRef({ ...ref, curves: e.target.value === 'curves' })}><option value="basic">Basic Correction + Wheels</option><option value="curves">RGB Curves</option></select></div>
+        <div className="param"><label /><button disabled={!!busy || !matchRef.id} title="Match the clip at the playhead to the reference frame (sets Basic Correction sliders)" onClick={() => work('Apply Match', async () => { await applyColorMatch(clip.id, matchRef.id, matchRef.t, matchRef.faces, matchRef.curves); if (!getState().compare?.on) openCompare(); })}>Apply Match</button></div>
         {LUMETRI_UI['Color Wheels & Match'].map(slider)}</details>
       <details><summary>HSL Secondary</summary>
         <div className="param"><label>Enable</label><input type="checkbox" checked={!!l.hslOn} onChange={(e) => setL('hslOn', e.target.checked ? 1 : 0)} /><label>Show mask</label><input type="checkbox" checked={!!l.hslMask} onChange={(e) => setL('hslMask', e.target.checked ? 1 : 0)} /></div>

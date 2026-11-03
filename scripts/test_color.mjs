@@ -1,5 +1,5 @@
 // Color tests: Lab conversion, Auto Tone, Auto Color, Color Match (whole frame and skin tones). Run: node scripts/test_color.mjs
-import { rgbToLab, simulate, labStats, autoTone, autoColor, colorMatch } from '../src/Services/colorMatch.js';
+import { rgbToLab, simulate, labStats, autoTone, autoColor, colorMatch, matchCurves } from '../src/Services/colorMatch.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => { if (cond) { pass++; console.log('  ok  ', name); } else { fail++; console.log('  FAIL', name, extra); } };
@@ -42,4 +42,23 @@ ok('Color Match: brightness matches', Math.abs(M.L - R.L) < 2 && Math.abs(T0.L -
 ok('Color Match: color balance matches', Math.hypot(M.a - R.a, M.b - R.b) < Math.hypot(T0.a - R.a, T0.b - R.b) * 0.35, JSON.stringify({ ref: [R.a, R.b], before: [T0.a, T0.b], after: [M.a, M.b] }));
 const cmf = colorMatch(tgt, ref, { faces: true });
 ok('Color Match with Face Detection uses the skin tones', cmf.usedSkin === true);
+// ---- D7: Color Match with RGB Curves, face model regions ----
+const ident = { master: [[0, 0], [1, 1]], r: [[0, 0], [1, 1]], g: [[0, 0], [1, 1]], b: [[0, 0], [1, 1]], hs: [[0, 0.5], [1, 0.5]] };
+const a0 = simulate(ref, {}), a1 = simulate(ref, { curves: ident });
+ok('identity curves change nothing in the CPU model', a0.every((v, i) => Math.abs(v - a1[i]) < 2 / 255));
+const mc = matchCurves(tgt, ref);
+ok('matched curves are increasing', ['r', 'g', 'b'].every((k) => mc[k].every((p, i) => i === 0 || (p[0] > mc[k][i - 1][0] && p[1] >= mc[k][i - 1][1]))), JSON.stringify(mc.r));
+const chanMean = (px, o) => { let s = 0; for (let i = o; i < px.length; i += 3) s += px[i]; return s / (px.length / 3); };
+const err = (px) => [0, 1, 2].reduce((s, o) => s + Math.abs(chanMean(px, o) - chanMean(ref, o)), 0);
+const cc = colorMatch(tgt, ref, { faces: false, curves: true });
+const matched = simulate(tgt, { exposure: 0, contrast: 0, ...cc });
+ok('Color Match with curves writes RGB curves', !!cc.curves && cc.curves.r.length > 2);
+ok('...and brings each channel close to the reference', err(matched) < err(tgt) * 0.3, JSON.stringify({ before: err(tgt), after: err(matched) }));
+const none = new Array(W * H).fill(false);
+const cfm = colorMatch(tgt, ref, { faces: true, faceBoxes: { target: none, reference: none } });
+ok('a face model that finds the face elsewhere keeps background skin-like pixels out', cfm.usedSkin === false);
+const box = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) box.push(x > 38 && x < 58 && y > 6 && y < 30);
+const cfb = colorMatch(tgt, ref, { faces: true, faceBoxes: { target: box, reference: box } });
+ok('...and the skin inside the detected faces is matched', cfb.usedSkin === true && cfb.usedFaceModel === true);
+
 console.log(`color: ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
