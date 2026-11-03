@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import NumInput from './NumInput';
-import { useStore, set, edit, getState, allSeqs } from '../Core/store';
+import { useStore, set, edit, getState, allSeqs, markDirty } from '../Core/store';
 import { TOOLS } from '../Core/tools';
 import { MENUS } from '../Core/menus';
 import { combos, DEFAULT_COMBOS, combosFor, comboLabel, comboOf, bindKey, setKeymap, saveKeymap, resetKeymap } from '../Core/shortcuts';
@@ -297,9 +297,20 @@ function NewSequenceDialog() {
 function ProjectSettingsDialog() {
   const name = useStore((x) => x.projectName);
   const [n, setN] = useState(name);
-  return <Modal title="Project Settings" footer={<><button onClick={() => { set({ projectName: n }); close(); }}>OK</button><button onClick={close}>Cancel</button></>}>
+  // Scratch Disks: null = Same as Project (captures in <project folder>/Captured, previews in the temp folder)
+  const [sc, setSc] = useState(() => ({ captured: null, previews: null, ...(getState().scratch || {}) }));
+  const pick = async (k) => { const d = await window.editorstage?.pickFolder?.(); if (d) setSc((x) => ({ ...x, [k]: d })); };
+  const ok = () => {
+    const s = getState(); const scratch = Object.fromEntries(Object.entries(sc).filter(([, v]) => v));
+    const changed = n !== s.projectName || JSON.stringify(scratch) !== JSON.stringify(s.scratch || {});
+    set({ projectName: n, scratch: Object.keys(scratch).length ? scratch : undefined }); if (changed) markDirty(); close();
+  };
+  const where = (k) => sc[k] || (k === 'captured' ? 'Same as Project (Captured folder next to the project file)' : 'System temp folder');
+  return <Modal title="Project Settings" footer={<><button onClick={ok}>OK</button><button onClick={close}>Cancel</button></>}>
     <Row label="Project name"><input value={n} onChange={(e) => setN(e.target.value)} /></Row>
-    <Row label="Scratch disks"><span className="dim">Captured video / previews: userData/media-cache</span></Row>
+    {[['captured', 'Captured audio / video'], ['previews', 'Video / audio previews']].map(([k, label]) => (
+      <Row key={k} label={label}><span className="dim ell" title={where(k)}>{where(k)}</span> <button onClick={() => pick(k)}>Browse...</button>{sc[k] && <button onClick={() => setSc((x) => ({ ...x, [k]: null }))}>Default</button>}</Row>
+    ))}
     <Row label="Ingest"><span className="dim">Non-native formats are transcoded to H.264/PCM/PNG proxies via FFmpeg on import</span></Row>
   </Modal>;
 }
@@ -616,8 +627,12 @@ function ExportDialog() {
   const go = async (bg) => {
     const path = await window.editorstage.saveDialog('export', `${seq.name}.${P.ext}`, P.ext);
     if (!path) return;
-    const id = queueExport(opts(path));
-    if (bg) close(); else setJobId(id);
+    // the save dialog already asked before replacing an existing file; a job in the queue with the same file is asked about
+    // here (the file on disk is only replaced when an export finishes, see exportSequence)
+    const start = () => { const id = queueExport(opts(path)); if (bg) close(); else setJobId(id); };
+    const same = (getState().exportQueue || []).find((j) => (j.status === 'queued' || j.status === 'rendering') && String(j.path).toLowerCase() === String(path).toLowerCase());
+    if (!same) return start();
+    if (window.confirm(`${path.split(/[\\/]/).pop()} is already in the Export Queue (${same.status}). Queue another export to the same file? The later export replaces the earlier one.`)) start();
   };
   const aspectDiffers = Math.abs(seq.width / seq.height - w / h) > 0.01;
   return (

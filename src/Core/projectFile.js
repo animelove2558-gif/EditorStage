@@ -3,7 +3,7 @@
 /** The project as saved: sequences, media, bins, identity and the sequence In / Out. */
 export const projectJson = (s) => JSON.stringify({
   projectId: s.projectId, projectName: s.projectName, sequence: s.sequence, media: s.media, bins: s.bins, seqs: s.seqs,
-  inPoint: s.inPoint ?? null, outPoint: s.outPoint ?? null,
+  inPoint: s.inPoint ?? null, outPoint: s.outPoint ?? null, scratch: s.scratch || undefined,
 }, null, 2);
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -33,6 +33,7 @@ export function parseProject(text) {
     for (const [id, q] of Object.entries(data.seqs)) { const e = seqProblem(q, `sequence ${q?.name || id}`); if (e) throw new Error(e); }
   }
   if (data.bins != null && !Array.isArray(data.bins)) throw new Error('the bin list is damaged');
+  if (data.scratch != null && (!isObj(data.scratch) || Object.values(data.scratch).some((v) => v != null && typeof v !== 'string'))) delete data.scratch;
   for (const k of ['inPoint', 'outPoint']) if (data[k] != null && !Number.isFinite(data[k])) delete data[k];
   return { ...data, media: data.media || [], seqs: data.seqs || {}, bins: data.bins || [] };
 }

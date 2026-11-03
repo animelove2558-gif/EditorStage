@@ -487,6 +487,13 @@ async function audioOffset(ref, other, maxSec = 20) {
   }
   return (ref.start - other.start) + bestL / per; // timeline shift
 }
+/**
+ * The clips an audio analysis started from, as a key of everything the result depends on. Audio sync awaits the
+ * waveform analysis (seconds for long clips): when the clips changed meanwhile (trimmed, moved, deleted), the result
+ * would be applied to clips that are no longer the ones measured, so the command stops instead.
+ */
+const clipKey = (cs) => JSON.stringify(cs.map((c) => [c.id, c.start, c.dur, c.inPoint, c.speed, c.track, c.mediaId]));
+const stillSame = (before) => { const cur = getState().sequence.clips; const now = before.map((c) => cur.find((x) => x.id === c.id)); return now.every(Boolean) && clipKey(now) === clipKey(before); };
 export async function synchronizeClips(mode) {
   const s = getState(); const clips = s.sequence.clips.filter((c) => s.selection.includes(c.id)); if (clips.length < 2) return notify('Select two or more clips to synchronize');
   const ref = clips[0]; const shifts = {};
@@ -495,6 +502,7 @@ export async function synchronizeClips(mode) {
     else if (mode === 'end') shifts[c.id] = (ref.start + ref.dur) - (c.start + c.dur);
     else { const off = await audioOffset(ref, c); if (off == null) { notify('Audio sync failed (no audio data)'); continue; } shifts[c.id] = off; }
   }
+  if (!stillSame(clips)) return notify('Synchronize stopped: the clips were changed while their audio was analysed - run it again');
   edit('Synchronize', ({ seq }) => {
     const sel = seq.clips.filter((c) => s.selection.includes(c.id));
     for (const c of sel) if (shifts[c.id] != null) c.start += shifts[c.id];
@@ -511,6 +519,7 @@ export async function createMulticam({ name, sync = 'audio' } = {}) {
   const cams = multicamCams();
   if (cams.length < 2) return notify('Select two or more video clips (one per camera) first');
   const shifts = [0]; if (sync === 'audio') for (const c of cams.slice(1)) shifts.push((await audioOffset(cams[0], c)) ?? 0);
+  if (sync === 'audio' && !stillSame(cams)) return notify('Create Multi-Camera stopped: the clips were changed while their audio was analysed - run it again');
   const pos = sync === 'in' ? cams.map(() => 0) : cams.map((c, i) => c.start + (shifts[i] || 0)); const t0 = Math.min(...pos);
   const sub = newSeqObj(seq, name || `Multicam ${Object.keys(allSeqs()).length}`);
   sub.tracks = [...cams.map((_, i) => ({ id: `V${cams.length - i}`, kind: 'video', muted: false, solo: false, locked: false, sync: true })), { id: 'A1', kind: 'audio', muted: false, solo: false, locked: false, sync: true }];
@@ -546,11 +555,23 @@ async function toggleVoiceOver(trackId) {
   rec = mr; mr.start(); set({ recording: trackId, playing: true, rate: 1 }); notify('Recording voice-over… click the mic again to stop');
 }
 /** Save a MediaRecorder blob, transcode it with FFmpeg to a seekable file (H.264 / WAV), import it, return the media item. */
+// The converted file is kept in the Captured scratch folder (next to the project by default), so a recording travels with
+// the project instead of living in the app's media cache; the raw .webm and the cache copy are removed.
 export async function importRecording(bytes, kind, label) {
-  const tmp = await window.editorstage.tmpDir(); const src = `${tmp}\\${label.replace(/[^\w-]+/g, '_')}-${Date.now()}.webm`;
-  await window.editorstage.writeFile(src, bytes);
-  const r = await window.editorstage.transcode(src, kind); if (!r.ok) { notify('Recording failed to convert: ' + r.error); return null; }
-  const items = await importPaths([r.path], notify, { kind }); const m = items[0]; if (!m) return null;
+  const es = window.editorstage;
+  const tmp = await es.tmpDir(); const sp = tmp.includes('\\') ? '\\' : '/';
+  const stem = `${label.replace(/[^\w-]+/g, '_')}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
+  const src = `${tmp}${sp}${stem}.webm`;
+  await es.writeFile(src, bytes);
+  let r; try { r = await es.transcode(src, kind); } finally { es.removeFile(src).catch(() => {}); }
+  if (!r.ok) { notify('Recording failed to convert: ' + r.error); return null; }
+  let file = r.path;
+  try {
+    const { scratchDir } = await import('./scratch'); const dir = await scratchDir('captured'); const ds = dir.includes('\\') ? '\\' : '/';
+    const dest = `${dir}${ds}${stem}.${r.path.split('.').pop()}`;
+    await es.copyFile(r.path, dest); es.removeFile(r.path).catch(() => {}); file = dest;
+  } catch (e) { notify(`Recording kept in the media cache (cannot write to the Captured folder: ${errText(e)})`); }
+  const items = await importPaths([file], notify, { kind }); const m = items[0]; if (!m) return null;
   edit('Rename recording', ({ media }) => { const x = media.find((q) => q.id === m.id); if (x) x.name = `${label}.${kind === 'video' ? 'mp4' : 'wav'}`; });
   return mediaById(m.id);
 }

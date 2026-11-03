@@ -2,6 +2,7 @@ import { getState, set } from '../Core/store';
 import { exportSequence, renderAudioMix, wavBytesFromPcm } from './exporter';
 import { sequenceEnd } from '../Core/editing';
 import { sequenceHash } from '../Core/previewState';
+import { scratchDir } from '../Core/scratch';
 
 // Preview render cache: pre-rendered video (and mixed audio) for ranges of the sequence, valid only while the sequence is unchanged.
 const hasFx = (seq, c) => (c.effects || []).some((e) => e.enabled && e.category !== 'Audio') || (c.lumetri && Object.keys(c.lumetri).length) || (c.masks || []).length || c.nestId || c.graphic;
@@ -20,15 +21,15 @@ export async function renderPreview(mode, cancel = () => false) {
   const rangeIO = st.inPoint != null && st.outPoint != null && st.outPoint > st.inPoint ? [[st.inPoint, st.outPoint]] : [[0, end]];
   const ranges = mode === 'effects' ? effectRanges(seq).map(([a, b]) => [Math.max(0, a), Math.min(end, b)]) : rangeIO;
   if (!ranges.length) return { ok: false, error: 'No effects or transitions to render' };
-  const tmp = await window.editorstage.tmpDir(); const hash = sequenceHash(st); const made = [];
+  const tmp = await scratchDir('previews'); const sp = tmp.includes('\\') ? '\\' : '/'; const hash = sequenceHash(st); const made = [];
   for (let i = 0; i < ranges.length; i++) {
     const [a, b] = ranges[i];
     set({ renderProgress: { text: `Rendering ${mode === 'audio' ? 'audio' : 'video'} ${i + 1}/${ranges.length}`, p: 0 } });
     if (mode === 'audio') {
-      const pcm = await renderAudioMix(structuredClone({ ...st, log: [] }), a, b); const path = `${tmp}\\es-apreview-${hash}-${i}.wav`;
+      const pcm = await renderAudioMix(structuredClone({ ...st, log: [] }), a, b); const path = `${tmp}${sp}es-apreview-${hash}-${i}.wav`;
       await window.editorstage.writeFile(path, wavBytesFromPcm(pcm)); made.push({ kind: 'audio', start: a, end: b, path, hash });
     } else {
-      const path = `${tmp}\\es-preview-${hash}-${i}.mp4`;
+      const path = `${tmp}${sp}es-preview-${hash}-${i}.mp4`;
       const r = await exportSequence({ path, preset: 'Preview (H.264, fast)', width: Math.min(seq.width, 1280), height: Math.round((Math.min(seq.width, 1280) * seq.height) / seq.width / 2) * 2, fps: seq.fps, start: a, end: b, audio: false }, (p, text) => set({ renderProgress: { text: `${text}  (${i + 1}/${ranges.length})`, p } }), cancel);
       if (!r.ok) { set({ renderProgress: null }); return r; }
       made.push({ kind: 'video', start: a, end: b, path, hash });

@@ -119,6 +119,7 @@ ipcMain.handle('fs:rename', async (_e, from, to) => {
   if (!G.canRemove(from)) throw refuse('move', from); if (!G.canWrite(to)) throw refuse('write', to);
   await renameRetry(from, to); G.made(to); return true;
 });
+ipcMain.handle('fs:copy', async (_e, from, to) => { if (!G.canWrite(to)) throw refuse('write', to); await fs.copyFile(from, to); G.made(to); return true; });
 ipcMain.handle('fs:rm', async (_e, p) => { if (!G.canRemove(p)) return false; try { await fs.rm(p, { force: true }); return true; } catch { return false; } });
 // the system opens documents and folders, never programs or scripts (a media path in a project from someone else)
 ipcMain.handle('shell:open', async (_e, p) => (await G.canOpen(p) ? shell.openPath(p) : 'EditorStage does not open programs or scripts'));

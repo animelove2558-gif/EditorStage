@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('editorstage', {
   revealInFolder: (p) => ipcRenderer.invoke('shell:reveal', p),
   removeFile: (p) => ipcRenderer.invoke('fs:rm', p),
   rename: (from, to) => ipcRenderer.invoke('fs:rename', from, to),
+  copyFile: (from, to) => ipcRenderer.invoke('fs:copy', from, to),
   mogrt: { install: (p) => ipcRenderer.invoke('mogrt:install', p), list: () => ipcRenderer.invoke('mogrt:list'), read: (id) => ipcRenderer.invoke('mogrt:read', id), remove: (id) => ipcRenderer.invoke('mogrt:remove', id) },
   platform: process.platform,
   // workflow features (electron/workflow.js)
