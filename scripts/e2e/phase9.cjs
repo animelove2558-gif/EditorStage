@@ -68,4 +68,31 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   ok('...where Frame Sampling shows one of the two real frames', (sample[20] > 200) !== (sample[42] > 200), J([sample[20], sample[42]]));
   r = await js(`const st = E.store.getState(); return JSON.parse(E.projectFile.projectJson(st)).sequence.clips[0].frameSampling;`);
   ok('Optical Flow is saved with the clip', r === 'flow', J(r));
+
+  console.log('D3 Export Queue in a background render window');
+  const { BrowserWindow } = require('electron');
+  const queueRun = async (bgOn, file) => {
+    await js(`E.exportQueue.setBackgroundRender(${bgOn}); T.fresh(160, 90); const m = await T.imp(${J(moving)}); T.place(m, 0, 'V1'); return true;`);
+    const id = await js(`return E.exportQueue.queueExport({ path: ${J(out(file))}, preset: 'Apple ProRes 422 (MOV)', width: 160, height: 90, fps: 30, start: 0, end: 2 });`);
+    const seen = { locked: false, bg: false, windows: 1, edits: 0 };
+    for (let i = 0; i < 600; i++) {
+      const s = await js(`const j = E.store.getState().exportQueue.find((x) => x.id === ${J(id)}); if (j.status === 'rendering') { E.store.edit('tweak', ({ seq }) => { seq.tweak = (seq.tweak || 0) + 1; }); } return { st: j.status, msg: j.msg, locked: E.media.playbackLocked(), bg: E.exportQueue.runningInBackground() };`);
+      if (s.st === 'rendering') { seen.locked ||= s.locked; seen.bg ||= s.bg; seen.edits++; seen.windows = Math.max(seen.windows, BrowserWindow.getAllWindows().length); }
+      if (['done', 'error', 'cancelled'].includes(s.st)) { seen.st = s.st; seen.msg = s.msg; break; }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return seen;
+  };
+  r = await queueRun(true, 'queued_bg.mov');
+  ok('the queued export renders in a second (hidden) window', r.st === 'done' && r.bg === true && r.windows === 2, J(r));
+  ok('...while the main window keeps its preview (playback not locked) and can be edited', r.locked === false && r.edits > 0, J(r));
+  let fr = frames(out('queued_bg.mov'), 160, 90);
+  ok('the background export has every frame and the right picture', fr.length === 60 && px(fr[0], 160, 10, 45)[0] > 200 && px(fr[0], 160, 60, 45)[0] < 40, J({ n: fr.length, a: px(fr[0], 160, 10, 45), b: px(fr[0], 160, 60, 45) }));
+  r = await queueRun(false, 'queued_fg.mov');
+  ok('control: rendering in the main window locks its playback meanwhile', r.st === 'done' && r.locked === true && r.bg === false, J(r));
+  await js('E.exportQueue.setBackgroundRender(true); return true;');
+  r = await js(`T.fresh(160, 90); const m = await T.imp(${J(moving)}); T.place(m, 0, 'V1'); const id = E.exportQueue.queueExport({ path: ${J(out('queued_cancel.mov'))}, preset: 'Apple ProRes 422 (MOV)', width: 160, height: 90, fps: 30, start: 0, end: 2 });
+    for (let i = 0; i < 200 && E.store.getState().exportQueue.find((x) => x.id === id).status !== 'rendering'; i++) await T.tick(20);
+    await T.tick(150); E.exportQueue.cancelExport(id); const j = await E.exportQueue.whenExported(id); return j.status;`);
+  ok('a background export can be cancelled and leaves no file', r === 'cancelled' && !fs.existsSync(out('queued_cancel.mov')) && !fs.existsSync(out('queued_cancel.es-part.mov')), J(r));
 });

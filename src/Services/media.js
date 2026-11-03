@@ -209,6 +209,8 @@ const blendFor = (clip, t) => {
 // While an export renders it owns the shared media elements: playback sync must not seek them back to the playhead.
 let exportLocks = 0;
 export const lockPlayback = (on) => { exportLocks = Math.max(0, exportLocks + (on ? 1 : -1)); };
+/** true while an export in this window owns the media elements (the preview does not follow the playhead meanwhile) */
+export const playbackLocked = () => exportLocks > 0;
 export function syncPlayback(realState) {
   if (exportLocks) return;
   const state = flatten(realState);

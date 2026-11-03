@@ -6,6 +6,7 @@ const { atomicWrite, renameRetry, guard, inside, MEDIA_EXT } = require('./fileGu
 const { killAll } = require('./ffjobs');
 require('./media');
 require('./workflow');
+const renderWindow = require('./renderWindow');
 
 // Privileged media scheme: CORS-enabled + streamable so <video>/<audio> can feed WebAudio and WebGL.
 protocol.registerSchemesAsPrivileged([{ scheme: 'es-app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true } }, { scheme: 'es-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } }]);
@@ -15,6 +16,7 @@ app.commandLine.appendSwitch('enable-unsafe-webgpu');
 app.commandLine.appendSwitch('enable-features', 'WebCodecs,VaapiVideoDecoder,PlatformHEVCDecoderSupport');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
+let mainWin = null;
 function createWindow() {
   const win = new BrowserWindow({
     width: 1680, height: 1000, minWidth: 1100, minHeight: 700,
@@ -26,7 +28,9 @@ function createWindow() {
       devTools: !app.isPackaged, // the installed app has no DevTools
     },
   });
-  lockNavigation(win.webContents);
+  lockNavigation(win.webContents); mainWin = win;
+  // the hidden Export Queue window ends with the main window (it would keep the app running)
+  win.on('closed', () => { if (mainWin === win) mainWin = null; renderWindow.close(); });
   Menu.setApplicationMenu(null); // the UI renders its own Premiere-style menu bar
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   win.once('ready-to-show', () => win.show());
@@ -45,6 +49,7 @@ function createWindow() {
   return win;
 }
 
+renderWindow.setNavigationLock((wc) => lockNavigation(wc));
 const appPage = pathToFileURL(path.join(__dirname, '..', 'dist')).toString().toLowerCase() + '/';
 const isWeb = (url) => /^https?:\/\//i.test(String(url));
 /**
@@ -189,7 +194,7 @@ let pendingProject = projectArg(process.argv); if (pendingProject) { G.grantFile
 ipcMain.handle('app:takeOpenFile', () => { const p = pendingProject; pendingProject = null; return p; });
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on('second-instance', (_e, argv) => {
-  const w = BrowserWindow.getAllWindows()[0]; if (!w) return;
+  const w = mainWin; if (!w || w.isDestroyed()) return;
   if (w.isMinimized()) w.restore(); w.focus();
   const p = projectArg(argv); if (p) { G.grantFile(p); grantProject(p); w.webContents.send('app:openFile', p); }
 });

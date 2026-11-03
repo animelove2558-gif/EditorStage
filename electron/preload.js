@@ -51,4 +51,12 @@ contextBridge.exposeInMainWorld('editorstage', {
     onProgress: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('archive:progress', h); return () => ipcRenderer.removeListener('archive:progress', h); },
   },
   pickFolder: () => ipcRenderer.invoke('dialog:folder'),
+  // Export Queue in the hidden render window (electron/renderWindow.js): start/cancel/progress from the main window,
+  // onJob/progress/done/ready on the render window's side
+  render: {
+    start: (job) => ipcRenderer.invoke('render:start', job), cancel: (id) => ipcRenderer.send('render:cancel', id),
+    onProgress: (cb) => { const h = (_e, id, p, msg) => cb(id, p, msg); ipcRenderer.on('render:progress', h); return () => ipcRenderer.removeListener('render:progress', h); },
+    onJob: (cb) => ipcRenderer.on('render:job', (_e, job) => cb(job)), onCancel: (cb) => ipcRenderer.on('render:cancel', (_e, id) => cb(id)),
+    progress: (id, p, msg) => ipcRenderer.send('render:progress', id, p, msg), done: (id, r) => ipcRenderer.send('render:done', id, r), ready: () => ipcRenderer.send('render:ready'),
+  },
 });
