@@ -100,5 +100,16 @@ ok('undo back to the content that was written: clean', st().dirty === false);
 const tok2 = S.saveToken(); S.markDirty(); S.markSaved(tok2);
 ok('a non-undoable change made while saving keeps it dirty', st().dirty === true);
 
+// ---- saved fields changed without an undo step (bins, name, In / Out) ----
+fresh();
+S.set({ playhead: 3, selection: [] });
+ok('UI state (playhead, selection) does not make the project unsaved', st().dirty === false);
+S.set((s) => ({ bins: [...s.bins, { id: 'b', name: 'Bin 1' }] }));
+ok('a new bin makes it unsaved', st().dirty === true);
+S.markSaved(); S.set({ inPoint: 1 });
+ok('setting In makes it unsaved (In / Out are saved)', st().dirty === true);
+S.markSaved(); S.set({ projectName: 'Renamed' });
+ok('renaming the project makes it unsaved', st().dirty === true);
+
 console.log(`store: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

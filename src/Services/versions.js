@@ -27,7 +27,7 @@ export async function historyDir(s = getState()) {
 }
 async function paths(dir) { const d = dir || await historyDir(); const s = sep(d); return { d, objects: `${d}${s}objects`, refs: `${d}${s}refs.json`, s }; }
 const emptyRefs = () => ({ branches: { main: null }, current: 'main', revisions: {} });
-async function readRefs(dir) { const p = await paths(dir); try { return JSON.parse(await es().readText(p.refs)); } catch { return emptyRefs(); } }
+async function readRefs(dir) { const p = await paths(dir); if (!(await es().exists(p.refs))) return emptyRefs(); try { return JSON.parse(await es().readText(p.refs)); } catch { return emptyRefs(); } }
 async function writeRefs(r, dir) { const p = await paths(dir); await es().mkdir(p.d); await es().writeFile(p.refs, JSON.stringify(r, null, 1)); }
 
 const projectData = (s = getState()) => ({ sequence: s.sequence, media: s.media, projectName: s.projectName, projectId: s.projectId, bins: s.bins, seqs: s.seqs });
@@ -177,7 +177,8 @@ export async function clearSessionMarker() { markerKey = '\u0000closed'; try { a
  * ({ marker, rev } when the previous session crashed after an auto-save that was not followed by a Save), else null.
  */
 export async function bootRecovery() {
-  let prev = null; try { prev = JSON.parse(await es().readText(await markerPath())); } catch { /* clean exit */ }
+  let prev = null; const mp = await markerPath();
+  try { if (await es().exists(mp)) prev = JSON.parse(await es().readText(mp)); } catch { /* unreadable: treated as a clean exit */ }
   await writeMarker(); subscribe(() => { if (markerKey !== '\u0000closed') writeMarker(); });
   if (!prev?.dir) return null;
   const rev = await latestRevision(prev.dir).catch(() => null);

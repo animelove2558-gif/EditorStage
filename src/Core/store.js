@@ -75,8 +75,12 @@ export const subscribe = (l) => (listeners.add(l), () => listeners.delete(l));
 export const useStore = (sel = (s) => s) => useSyncExternalStore(subscribe, () => sel(state));
 
 /** Non-undoable update (playhead, tool, UI). */
+// project fields that are saved in the .esproj but changed without an undo step: changing one makes the project unsaved
+const SAVED_FIELDS = ['bins', 'projectName', 'scratch', 'inPoint', 'outPoint'];
 export function set(patch) {
-  state = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+  const next = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+  if (SAVED_FIELDS.some((k) => next[k] !== state[k])) forced++;
+  state = next; syncDirty();
   emit();
 }
 
