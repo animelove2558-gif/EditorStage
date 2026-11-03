@@ -833,6 +833,9 @@ export const commands = {
 
   // Timeline tracks (track headers)
   'track.mute': (id) => toggleTrack(id, 'muted'),
+  /** Toggle Track Output (the eye of a video / caption track): a hidden track is left out of the Program Monitor and every export */
+  'track.toggleOutput': (id) => { const t = getState().sequence.tracks.find((x) => x.id === id); if (!t || t.kind === 'audio') return notify('Toggle Track Output works on video and caption tracks');
+    edit('Toggle Track Output', ({ seq }) => { const x = seq.tracks.find((q) => q.id === id); if (x.hidden) delete x.hidden; else x.hidden = true; }); },
   'track.solo': (id) => toggleTrack(id, 'solo'),
   'track.lock': (id) => toggleTrack(id, 'locked'),
   'track.sync': (id) => toggleTrack(id, 'sync'),

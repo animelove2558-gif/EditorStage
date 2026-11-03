@@ -9,17 +9,20 @@ const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
 
 const { ffmpegPath } = require('./ffmpegBin');
+const { guard } = require('./fileGuard');
+const { spawnTracked } = require('./ffjobs');
+const refuse = (what, p) => Object.assign(new Error(`EACCES: EditorStage may not ${what} ${p}`), { code: 'EACCES' });
 const send = (ch, payload) => { for (const w of BrowserWindow.getAllWindows()) w.webContents.send(ch, payload); };
 const runFfmpeg = (args) => new Promise((resolve) => {
   const bin = ffmpegPath(); if (!bin || !fs.existsSync(bin)) return resolve({ ok: false, error: 'FFmpeg binary not available' });
-  const p = spawn(bin, args, { windowsHide: true }); let err = '';
+  const p = spawnTracked(bin, args, { windowsHide: true }); let err = '';
   p.stderr.on('data', (d) => { err = (err + d).slice(-800); });
   p.on('error', (e) => resolve({ ok: false, error: String(e) }));
   p.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim().split('\n').pop() || `ffmpeg exit ${code}` }));
 });
 
 // ---------------------------------------------------------------- generic fs helpers (history / archive)
-ipcMain.handle('fs:mkdir', async (_e, p) => { await fs.promises.mkdir(p, { recursive: true }); return true; });
+ipcMain.handle('fs:mkdir', async (_e, p) => { if (!path.isAbsolute(String(p)) || guard().inStartup(p)) throw refuse('create', p); await fs.promises.mkdir(p, { recursive: true }); return true; });
 ipcMain.handle('fs:exists', async (_e, p) => fs.existsSync(p));
 ipcMain.handle('fs:stat', async (_e, p) => { try { const s = await fs.promises.stat(p); return { size: s.size, mtime: s.mtimeMs, dir: s.isDirectory() }; } catch { return null; } });
 ipcMain.handle('fs:readdir', async (_e, p) => { try { return await fs.promises.readdir(p); } catch { return []; } });
@@ -53,6 +56,7 @@ ipcMain.handle('app:env', () => ({ remoteSession: process.platform === 'win32' &
 // ---------------------------------------------------------------- audio extraction (Edit in AudioStage, AI tools)
 /** Render a source range to a WAV (default 48 kHz / 24-bit PCM). */
 ipcMain.handle('media:extractAudio', async (_e, src, start, dur, out, opts = {}) => {
+  if (!guard().canWrite(out)) return { ok: false, error: `EditorStage may not write ${out}` };
   await fs.promises.mkdir(path.dirname(out), { recursive: true });
   const codec = opts.bits === 16 ? 'pcm_s16le' : opts.bits === 32 ? 'pcm_f32le' : 'pcm_s24le';
   const args = ['-y', '-hide_banner', '-ss', String(Math.max(0, start || 0)), ...(dur ? ['-t', String(dur)] : []), '-i', src, '-vn', '-map', '0:a:0?', '-c:a', codec, '-ar', String(opts.rate || 48000), ...(opts.mono ? ['-ac', '1'] : []), out];
@@ -85,7 +89,8 @@ function locateAudioStage() {
   return null;
 }
 ipcMain.handle('audiostage:locate', () => locateAudioStage());
-ipcMain.handle('audiostage:setPath', (_e, p) => { const s = readSettings(); s.path = p || undefined; fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2)); return locateAudioStage(); });
+// the location must come from a file / folder dialog: a path from anywhere else would be a program EditorStage later runs
+ipcMain.handle('audiostage:setPath', (_e, p) => { if (p && !guard().picked(p)) return null; const s = readSettings(); s.path = p || undefined; fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2)); return locateAudioStage(); });
 
 const watchers = new Map(); // file -> { watcher, timer, last }
 function watchFile(file) {
@@ -133,6 +138,7 @@ const volumeLabel = (p) => { const m = /^([A-Za-z]:)/.exec(p); return m ? m[1].t
  * items: [{ path, name, kind, duration, width, height }]
  */
 ipcMain.handle('archive:run', async (e, { items, dest, project, compress = true, removeOriginals = false, note = '' }) => {
+  if (!guard().picked(dest)) return { ok: false, error: 'Choose the archive drive / folder in the folder dialog' };
   const root = path.join(dest, 'EditorStage Archive', String(project || 'Untitled').replace(/[<>:"/\\|?*]+/g, '_'));
   const stamp = new Date().toISOString().replace(/[:.]/g, '-'); const dir = path.join(root, stamp);
   await fs.promises.mkdir(path.join(dir, 'files'), { recursive: true });
@@ -171,7 +177,8 @@ ipcMain.handle('archive:restore', async (_e, { archiveId, hash, to }) => {
   const it = rec.items.find((x) => x.hash === hash); if (!it) return { ok: false, error: 'Unknown item' };
   const src = path.join(rec.dest, 'files', it.stored);
   if (!fs.existsSync(src)) return { ok: false, error: `Archive drive not connected (${rec.volume}). Connect it and try again.`, offline: true };
-  const out = to || it.originalPath; await fs.promises.mkdir(path.dirname(out), { recursive: true });
+  const out = to || it.originalPath; if (!guard().canWrite(out)) return { ok: false, error: `EditorStage may not write ${out}` };
+  await fs.promises.mkdir(path.dirname(out), { recursive: true });
   if (it.compressed) await pipeline(fs.createReadStream(src), zlib.createGunzip(), fs.createWriteStream(out)); else await fs.promises.copyFile(src, out);
   return { ok: true, path: out };
 });

@@ -6,7 +6,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const { ffmpegPath, hasEncoder } = require('./ffmpegBin');
-const { renameRetry } = require('./fileGuard');
+const { renameRetry, guard } = require('./fileGuard');
 
 const ARGS = {
   video: (i, o) => ['-y', '-i', i, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:a', 'aac', '-movflags', '+faststart', o],
@@ -67,11 +67,13 @@ async function transcode(src, kind) {
 // ---- Encode jobs: raw frames are piped into FFmpeg's stdin. Several can run at once (Export Queue, generated media). ----
 // job ids are chosen by the renderer; the legacy export:* calls use the id 'export'.
 const { jobStart, jobWrite, jobEnd, jobCancel } = createJobs(ffmpegPath);
-ipcMain.handle('job:start', (_e, id, args) => jobStart(id, args));
+// FFmpeg may only write where the renderer itself may write (no programs, nothing into Startup)
+const argsRefused = (args) => guard().checkFfmpegArgs(args);
+ipcMain.handle('job:start', (_e, id, args) => { const bad = argsRefused(args); return bad ? { ok: false, error: bad } : jobStart(id, args); });
 ipcMain.handle('job:write', (_e, id, buf) => jobWrite(id, buf));
 ipcMain.handle('job:end', (_e, id) => jobEnd(id));
 ipcMain.handle('job:cancel', (_e, id) => jobCancel(id));
-ipcMain.handle('export:start', (_e, args) => jobStart('export', args));
+ipcMain.handle('export:start', (_e, args) => { const bad = argsRefused(args); return bad ? { ok: false, error: bad } : jobStart('export', args); });
 ipcMain.handle('export:frame', (_e, buf) => jobWrite('export', buf));
 ipcMain.handle('export:end', () => jobEnd('export'));
 ipcMain.handle('export:cancel', () => jobCancel('export'));
@@ -82,6 +84,7 @@ ipcMain.handle('export:cancel', () => jobCancel('export'));
 const runs = new Map();
 ipcMain.handle('ffmpeg:run', (e, args, id) => new Promise((resolve) => {
   const bin = ffmpegPath(); if (!bin || !fs.existsSync(bin)) return resolve({ ok: false, error: 'FFmpeg binary not available' });
+  const bad = argsRefused(args); if (bad) return resolve({ ok: false, error: bad });
   const p = spawnTracked(bin, args, { windowsHide: true }); let err = ''; const run = { p, killed: false }; if (id) runs.set(id, run);
   p.stderr.on('data', (d) => {
     err += d; if (err.length > 4e6) err = err.slice(-2e6);

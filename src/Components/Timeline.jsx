@@ -184,6 +184,7 @@ function TrackMenu({ seq, id, close }) {
     {item('Delete Empty Tracks', 'timeline.deleteEmptyTracks', [], { disabled: !ed.emptyTracks(seq).length })}
     <div className="menu-sep" />
     {t.kind !== 'caption' && item('Target Track', 'track.target', [id], { on: ed.isTargeted(seq, t) })}
+    {t.kind !== 'audio' && item('Toggle Track Output', 'track.toggleOutput', [id], { on: !t.hidden })}
     {item('Lock Track', 'track.lock', [id], { on: t.locked })}
     {t.kind !== 'caption' && item('Sync Lock', 'track.sync', [id], { on: t.sync })}
     {t.kind === 'audio' && item('Mute Track', 'track.mute', [id], { on: t.muted })}
@@ -582,6 +583,7 @@ export default function Timeline() {
                   ? <button className={`tgt ${ed.isTargeted(seq, t) ? 'on' : ''}`} title={`Track Targeting (${t.id}): Insert, Overwrite, Paste, Match Frame and Add Edit use the targeted tracks`} onClick={() => run('track.target', t.id)}>{t.id}</button>
                   : <b>{t.id}</b>}
                 <span className="tname ell" title={`${t.name || t.id} · drag to reorder · double-click to rename`} onDoubleClick={() => run('track.rename', t.id)}>{t.name || ''}</span>
+                {t.kind !== 'audio' && <button title={t.hidden ? 'Toggle Track Output: hidden (not shown or exported)' : 'Toggle Track Output'} className={t.hidden ? 'eye on' : 'eye'} onClick={() => run('track.toggleOutput', t.id)}>{t.hidden ? '⊘' : '👁'}</button>}
                 {t.kind !== 'caption' && <>
                   <button title="Mute Track" className={t.muted ? 'on' : ''} onClick={() => run('track.mute', t.id)}>M</button>
                   <button title="Solo Track" className={t.solo ? 'on' : ''} onClick={() => run('track.solo', t.id)}>S</button>

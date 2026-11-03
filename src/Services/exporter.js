@@ -300,7 +300,7 @@ export async function smartRenderPlan(state, opts) {
   if (opts.width !== seq.width || opts.height !== seq.height) return { reason: 'the output size differs from the sequence' };
   if (seq.canvasFill && seq.canvasFill.type !== 'none') return { reason: 'the sequence has a canvas fill' };
   if (seq.par && seq.par !== '1/1') return { reason: 'the sequence pixels are not square' };
-  const vis = seq.tracks.filter((t) => t.kind === 'video' || t.kind === 'caption').map((t) => t.id);
+  const vis = seq.tracks.filter((t) => (t.kind === 'video' || t.kind === 'caption') && !t.hidden).map((t) => t.id); // Toggle Track Output: hidden tracks are not rendered
   const clips = seq.clips.filter((c) => vis.includes(c.track) && c.enabled && !c.asAudio && c.start < b - half && c.start + c.dur > a + half).sort((x, y) => x.start - y.start);
   if (!clips.length) return { reason: 'there is no video in the range' };
   if (new Set(clips.map((c) => c.track)).size > 1) return { reason: 'more than one video track is used' };

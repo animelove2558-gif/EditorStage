@@ -39,7 +39,13 @@ export default function App() {
   useEffect(() => { // window close asks to save; .esproj opened from Explorer (start-up or a second launch)
     const es = window.editorstage; if (!es?.onCloseRequest) return;
     // a normal close removes the crash marker (Services/versions.js) before the window goes
-    es.onCloseRequest(() => confirmDiscard(() => { clearSessionMarker().finally(() => es.closeOk()); }));
+    const closeNow = () => confirmDiscard(() => { clearSessionMarker().finally(() => es.closeOk()); });
+    es.onCloseRequest(() => {
+      // exports still running / queued would be stopped (their FFmpeg processes end with the app): ask first
+      const s = getState(); const busy = (s.exportQueue || []).filter((j) => j.status === 'rendering' || j.status === 'queued').length + (s.renderProgress ? 1 : 0);
+      if (!busy) return closeNow();
+      openDialog('confirm', { title: 'Exports Running', message: `${busy} export${busy > 1 ? 's are' : ' is'} still rendering or queued. Quit EditorStage and stop ${busy > 1 ? 'them' : 'it'}?`, okLabel: 'Stop and Quit', onOk: closeNow });
+    });
     // the previous session did not close normally: offer its newest auto-save
     bootRecovery().then((r) => {
       if (!r) return;

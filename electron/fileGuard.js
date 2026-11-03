@@ -36,6 +36,7 @@ function createGuard(app) {
     },
     canRemove(p) {
       if (!abs(p) || g.inStartup(p)) return false;
+      if (/\.es-(part|tmp)(\.[^.\\/]+)?$/i.test(p) && !isDangerous(p)) return true; // EditorStage's own unfinished exports / writes
       return roots().some((d) => inside(p, d)) || [...dirs].some((d) => inside(p, d)) || ours.has(norm(p)) || files.has(norm(p));
     },
     async canOpen(p) {

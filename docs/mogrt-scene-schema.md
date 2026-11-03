@@ -170,7 +170,7 @@ control overrides replace the *base value* of the exposed property before its ex
 - Footage (`footage.js`): images, SVG, PSD/PSB (`psd.js`), AI/PDF/EPS (pdf.js), video (blob URLs, frame-seeked), FFmpeg fallback for other formats, audio (`audio.js`: live + export mix).
 
 Tests: `node scripts/mogrt/test_features.mjs` (evaluator features on synthetic scenes); visual checks: `scripts/mogrt/synthetic_scenes.mjs` /
-`footage_test_scene.mjs` / `pack_mogrt.mjs` produce scenes / packed templates for the `dist/mogrt-test.html` harness (`window.__mt.load|loadScene|loadSceneDir|paint|e2e`).
+`footage_test_scene.mjs` / `pack_mogrt.mjs` produce scenes / packed templates for the `dist/mogrt-test.html` harness (a development page: built by `ES_DEV=1 npm run build` or `node scripts/mogrt/mtbuild.cjs`, never packaged) (`window.__mt.load|loadScene|loadSceneDir|paint|e2e`).
 
 ## Late additions (renderer completion)
 

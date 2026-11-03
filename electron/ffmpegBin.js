@@ -62,6 +62,8 @@ const hasEncoder = async (name) => { const i = await ffmpegInfo(); return !i.ok 
 ipcMain.handle('ffmpeg:info', () => ffmpegInfo());
 /** Preferences > FFmpeg: use this binary (null = back to the default chain). Checked before it is saved. */
 ipcMain.handle('ffmpeg:setPath', async (_e, p) => {
+  // only a binary the user picked in the file dialog is run (a path from anywhere else could be any program)
+  if (p && !require('./fileGuard').guard().picked(p)) return { ok: false, error: 'Choose the FFmpeg executable with Browse...' };
   if (p) {
     const i = await probeBinary(p); infoCache.delete(p);
     if (!i.ok) return { ok: false, error: `${p}: ${i.error}` };

@@ -7,7 +7,7 @@ const { spawnSync } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
 const { suite } = require('./harness.cjs');
 
-suite('phase5c3 e2e', async ({ js, ok, A, out }) => {
+suite('phase5c3 e2e', async ({ js, ok, A, out, nextOpen }) => {
   const J = (x) => JSON.stringify(x);
   const probe = (f) => String(spawnSync(ffmpeg, ['-hide_banner', '-i', f]).stderr);
   const vcodec = (f) => /Video: (\w+)/.exec(probe(f))?.[1];
@@ -42,8 +42,12 @@ suite('phase5c3 e2e', async ({ js, ok, A, out }) => {
   ok('Create Proxies (H.264) works without x264', proxy.proxy?.status === 'ready' && vcodec(proxy.proxy.path) === 'h264' && noX26x(proxy.proxy.path), J(proxy));
 
   console.log('Preferences > FFmpeg');
+  const typed = await js(`return await window.editorstage.setFfmpegPath(${J(ffmpeg)});`);
+  ok('a path that did not come from the file dialog is refused (never run)', typed.ok === false && /Browse/.test(typed.error), J(typed));
+  nextOpen.push(out('nothing.exe')); await js(`await window.editorstage.openDialog('ffmpeg'); return true;`);
   const bad = await js(`return await window.editorstage.setFfmpegPath(${J(out('nothing.exe'))});`);
   ok('a path that is not FFmpeg is refused', bad.ok === false && /not found|not an FFmpeg/.test(bad.error), J(bad));
+  nextOpen.push(ffmpeg); await js(`await window.editorstage.openDialog('ffmpeg'); return true;`);
   const set = await js(`return await window.editorstage.setFfmpegPath(${J(ffmpeg)});`);
   ok('a valid FFmpeg is saved and used (source: preferences)', set.ok && set.info.source === 'preferences' && set.info.path === ffmpeg, J(set.info && { s: set.info.source, p: set.info.path }));
   await js(`E.store.set({ dialog: { type: 'preferences' } }); return true;`);

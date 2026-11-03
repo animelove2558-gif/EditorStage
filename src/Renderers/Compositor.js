@@ -788,7 +788,8 @@ export class Compositor {
     let acc = this.acquire(); this.clear(acc, 0, 0, 0, bgAlpha);
     const empty = this.acquire(); this.clear(empty, 0, 0, 0, 0);
     const ctx = { seq, t, deps, dims, lookup, depth };
-    for (const tr of seq.tracks.filter((x) => x.kind === 'video' || x.kind === 'caption').reverse()) { // V1 first (bottom), caption tracks on top
+    // V1 first (bottom), caption tracks on top; a hidden track (Toggle Track Output) is not drawn, but still feeds track mattes / layer inputs
+    for (const tr of seq.tracks.filter((x) => (x.kind === 'video' || x.kind === 'caption') && !x.hidden).reverse()) {
       ctx.below = acc; const layer = this.trackLayer(ctx, tr, empty);
       if (layer) { const next = this.composite(acc, layer); this.release(acc); this.release(layer.tex); acc = next; }
     }

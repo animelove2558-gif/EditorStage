@@ -62,8 +62,11 @@ import * as trim from './Core/trimMode';
 import * as remix from './Services/remix';
 import * as remixClip from './Services/remixClip';
 import * as retimed from './Services/retimedAudio';
+import * as projectFile from './Core/projectFile';
+import NumInput from './Components/NumInput';
+import * as reactDom from 'react-dom/client';
 
-window.__es = { prefs, compositor, moreTransitions, moreVideoFx, presets, fxPreview, catalog, shortcuts, markers, attributes, menus, shorts, broll, mediaLink, health, filters, segment, hoverPreview, ducking, exportQueue, tracking, transcript, readLoudness, crossfadeGains, store, media, cmds, VIDEO_FX, AUDIO_FX, VIDEO_TRANSITION_IDS, params, dnd, audio, editing, exporter, gfx, flatten: flat, stab, vision, morph, validPreviewAt, mogrt, mogrtLibrary, mogrtRender,
+window.__es = { projectFile, NumInput, react: React, reactDom, prefs, compositor, moreTransitions, moreVideoFx, presets, fxPreview, catalog, shortcuts, markers, attributes, menus, shorts, broll, mediaLink, health, filters, segment, hoverPreview, ducking, exportQueue, tracking, transcript, readLoudness, crossfadeGains, store, media, cmds, VIDEO_FX, AUDIO_FX, VIDEO_TRANSITION_IDS, params, dnd, audio, editing, exporter, gfx, flatten: flat, stab, vision, morph, validPreviewAt, mogrt, mogrtLibrary, mogrtRender,
   silence, stt, diarize, reframe, captions, audiostage, archive, versions, layout, interchange, fonts, proxy, compare, trim, remix, remixClip, retimed }; // debug/automation handle
 
 createRoot(document.getElementById('root')).render(<App />);

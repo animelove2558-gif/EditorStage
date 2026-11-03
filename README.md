@@ -3,7 +3,9 @@ Offline NLE (Electron + React + FlexLayout + WebGL2 compositor + Web Audio + FFm
 
 - `npm start` - build + launch
 - `npm run watch` - rebuild on change (run `npx electron .` in another terminal)
-- `npm run dist:win` / `dist:mac` - installers (.exe NSIS / .dmg)
+- `npm run dist:win` - Windows installer (.exe, NSIS)
+- `npm run dist:mac` - macOS .dmg: must be run on a Mac (`ffmpeg-static` installs the FFmpeg binary of the machine it is installed on, and the app needs code signing / notarization there); it does not work from Windows
+- Only `ffmpeg-static` is a runtime dependency (the main process needs it); everything the renderer uses is bundled into `dist/` by esbuild, so those packages are devDependencies and are not copied into the installer
 
 ## Layout
 - `src/Renderers/Compositor.js` - multi-layer GPU compositor (motion, masks, opacity/blend, transitions)

@@ -2,7 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, session, protocol, net, shell
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs/promises');
-const { atomicWrite, renameRetry } = require('./fileGuard');
+const { atomicWrite, renameRetry, guard, inside } = require('./fileGuard');
+const { killAll } = require('./ffjobs');
 require('./media');
 require('./workflow');
 
@@ -21,9 +22,11 @@ function createWindow() {
     icon: path.join(__dirname, '..', 'dist', 'logo.png'), // build/icon.png, copied by scripts/build.mjs
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      autoplayPolicy: 'no-user-gesture-required', contextIsolation: true, nodeIntegration: false, sandbox: false, webSecurity: true,
+      autoplayPolicy: 'no-user-gesture-required', contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+      devTools: !app.isPackaged, // the installed app has no DevTools
     },
   });
+  lockNavigation(win.webContents);
   Menu.setApplicationMenu(null); // the UI renders its own Premiere-style menu bar
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   win.once('ready-to-show', () => win.show());
@@ -42,9 +45,27 @@ function createWindow() {
   return win;
 }
 
+const appPage = pathToFileURL(path.join(__dirname, '..', 'dist')).toString().toLowerCase() + '/';
+const isWeb = (url) => /^https?:\/\//i.test(String(url));
+/**
+ * The main window never navigates away from the app and never opens other Electron windows (they would get the preload
+ * API): links (MOGRT text, dropped files) to http(s) open in the system browser, everything else is refused.
+ */
+function lockNavigation(wc) {
+  wc.setWindowOpenHandler(({ url }) => { if (isWeb(url)) shell.openExternal(url).catch(() => {}); return { action: 'deny' }; });
+  wc.on('will-navigate', (e, url) => { if (!String(url).toLowerCase().startsWith(appPage)) { e.preventDefault(); if (isWeb(url)) shell.openExternal(url).catch(() => {}); } });
+  wc.on('will-attach-webview', (e) => e.preventDefault());
+}
+
 // 100% offline: block every non-local request
 function enforceOffline() {
-  session.defaultSession.setDisplayMediaRequestHandler(async (_req, cb) => { const src = await desktopCapturer.getSources({ types: ['screen'] }); cb({ video: src[0], audio: 'loopback' }); });
+  // Capture > Screen: the user confirms before the whole screen and the speaker sound are recorded
+  session.defaultSession.setDisplayMediaRequestHandler(async (_req, cb) => {
+    const w = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    const r = await dialog.showMessageBox(w, { type: 'question', buttons: ['Record Screen', 'Cancel'], defaultId: 1, cancelId: 1, title: 'Screen Capture', message: 'EditorStage wants to record your whole screen and the sound of your speakers.', detail: 'Recording starts when you choose Record Screen.' });
+    if (r.response !== 0) return cb({});
+    const src = await desktopCapturer.getSources({ types: ['screen'] }); cb(src[0] ? { video: src[0], audio: 'loopback' } : {});
+  });
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'media' || perm === 'local-fonts'));
   session.defaultSession.setPermissionCheckHandler((_wc, perm) => perm === 'media' || perm === 'local-fonts');
   session.defaultSession.webRequest.onBeforeRequest((details, cb) => {
@@ -65,29 +86,42 @@ const filters = {
   app: [{ name: 'Application', extensions: process.platform === 'win32' ? ['exe'] : ['app', '*'] }],
 };
 
+// paths picked in a dialog are what the renderer may write / delete / run beyond its own data (electron/fileGuard.js)
+const G = guard();
+/** a project file the user opens: its history folder (<name>.history) may be written and cleaned up */
+const grantProject = (p) => { if (/\.esproj$/i.test(String(p))) G.grantDir(String(p).replace(/\.esproj$/i, '') + '.history'); };
 ipcMain.handle('dialog:open', async (_e, kind, multi) => {
   const r = await dialog.showOpenDialog({ filters: filters[kind], properties: ['openFile', ...(multi ? ['multiSelections'] : [])] });
-  return r.canceled ? [] : r.filePaths;
+  if (r.canceled) return [];
+  for (const p of r.filePaths) { G.grantFile(p); grantProject(p); }
+  return r.filePaths;
 });
 ipcMain.handle('dialog:save', async (_e, kind, name, ext) => {
   const flt = kind === 'export' ? [{ name: String(ext).toUpperCase(), extensions: [ext] }] : filters[kind];
   const r = await dialog.showSaveDialog({ filters: flt, defaultPath: name });
-  return r.canceled ? null : r.filePath;
+  if (r.canceled || !r.filePath) return null;
+  G.grantFile(r.filePath); grantProject(r.filePath);
+  return r.filePath;
 });
-ipcMain.handle('dialog:folder', async () => { const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] }); return r.canceled ? null : r.filePaths[0]; });
+ipcMain.handle('dialog:folder', async () => { const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] }); if (r.canceled) return null; G.grantDir(r.filePaths[0]); return r.filePaths[0]; });
+const refuse = (what, p) => Object.assign(new Error(`EACCES: EditorStage may not ${what} ${p}`), { code: 'EACCES' });
 ipcMain.handle('fs:read', async (_e, p) => fs.readFile(p));
-ipcMain.handle('fs:readText', async (_e, p) => fs.readFile(p, 'utf8'));
+ipcMain.handle('fs:readText', async (_e, p) => { const t = await fs.readFile(p, 'utf8'); grantProject(p); return t; });
 // every write is atomic (temp file + fsync + rename): a failed Save never damages the file that was there
-ipcMain.handle('fs:write', async (_e, p, data) => atomicWrite(p, data));
+ipcMain.handle('fs:write', async (_e, p, data) => { if (!G.canWrite(p)) throw refuse('write', p); await atomicWrite(p, data); G.made(p); });
 
 const MEDIA_EXT = new Set('mp4 mov avi mkv webm prores hevc h265 h264 mpeg mpg m4v ts flv mts m2ts mxf 3gp wmv jpg jpeg png gif webp tiff tif bmp svg heic heif raw cr2 nef arw dng wav mp3 aac m4a flac ogg aiff aif wma opus'.split(' '));
 ipcMain.handle('fs:listRoots', async () => { const out = []; for (const l of 'CDEFGHIJKLMNOPQRSTUVWXYZ') { try { await fs.access(l + ':\\'); out.push(l + ':\\'); } catch { /* none */ } } return process.platform === 'win32' ? out : ['/']; });
 ipcMain.handle('fs:listDir', async (_e, dir) => { try { const ents = await fs.readdir(dir, { withFileTypes: true }); return { dirs: ents.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name).sort(), files: ents.filter((e) => e.isFile() && MEDIA_EXT.has(e.name.split('.').pop().toLowerCase())).map((e) => e.name).sort() }; } catch { return { dirs: [], files: [] }; } });
 
 // rename over an existing file (finished exports: <name>.es-part.<ext> -> <name>.<ext>)
-ipcMain.handle('fs:rename', async (_e, from, to) => { await renameRetry(from, to); return true; });
-ipcMain.handle('fs:rm', async (_e, p) => { try { await fs.rm(p, { force: true }); return true; } catch { return false; } });
-ipcMain.handle('shell:open', (_e, p) => shell.openPath(p));
+ipcMain.handle('fs:rename', async (_e, from, to) => {
+  if (!G.canRemove(from)) throw refuse('move', from); if (!G.canWrite(to)) throw refuse('write', to);
+  await renameRetry(from, to); G.made(to); return true;
+});
+ipcMain.handle('fs:rm', async (_e, p) => { if (!G.canRemove(p)) return false; try { await fs.rm(p, { force: true }); return true; } catch { return false; } });
+// the system opens documents and folders, never programs or scripts (a media path in a project from someone else)
+ipcMain.handle('shell:open', async (_e, p) => (await G.canOpen(p) ? shell.openPath(p) : 'EditorStage does not open programs or scripts'));
 ipcMain.handle('shell:reveal', (_e, p) => shell.showItemInFolder(p));
 ipcMain.on('win:control', (e, action) => {
   const w = BrowserWindow.fromWebContents(e.sender);
@@ -95,7 +129,7 @@ ipcMain.on('win:control', (e, action) => {
   if (action === 'minimize') w.minimize();
   else if (action === 'maximize') (w.isMaximized() ? w.unmaximize() : w.maximize());
   else if (action === 'close') w.close();
-  else if (action === 'devtools') w.webContents.toggleDevTools();
+  else if (action === 'devtools') { if (!app.isPackaged) w.webContents.toggleDevTools(); }
   else if (action === 'fullscreen') w.setFullScreen(!w.isFullScreen());
 });
 
@@ -103,7 +137,8 @@ app.whenReady().then(() => {
   const MIME = { '.wasm': 'application/wasm', '.js': 'text/javascript', '.task': 'application/octet-stream', '.tflite': 'application/octet-stream' };
   protocol.handle('es-app', async (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '');
-    const full = path.join(__dirname, '..', 'dist', rel); if (!full.startsWith(path.join(__dirname, '..', 'dist'))) return new Response('forbidden', { status: 403 });
+    const dist = path.join(__dirname, '..', 'dist'); const full = path.join(dist, rel);
+    if (!inside(full, dist)) return new Response('forbidden', { status: 403 }); // a sibling such as dist-other/ is outside dist/
     const r = await net.fetch(pathToFileURL(full).toString());
     const h = new Headers(r.headers); h.set('Access-Control-Allow-Origin', '*'); const ct = MIME[path.extname(full)]; if (ct) h.set('Content-Type', ct);
     return new Response(r.body, { status: r.status, headers: h });
@@ -130,15 +165,17 @@ app.whenReady().then(() => {
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());
 });
 app.on('window-all-closed', () => process.platform !== 'darwin' && app.quit());
+// child processes (FFmpeg exports, renders, conversions) do not end with EditorStage on Windows: stop them
+app.on('will-quit', () => { killAll(); });
 
 ipcMain.on('app:closeOk', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) { w.closeOk = true; w.close(); } });
 // .esproj opened from Explorer (file association): the path comes on the command line, or from a second launch
 const projectArg = (argv) => argv.slice(1).find((a) => /\.esproj$/i.test(a) && require('fs').existsSync(a)) || null;
-let pendingProject = projectArg(process.argv);
+let pendingProject = projectArg(process.argv); if (pendingProject) { G.grantFile(pendingProject); grantProject(pendingProject); }
 ipcMain.handle('app:takeOpenFile', () => { const p = pendingProject; pendingProject = null; return p; });
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on('second-instance', (_e, argv) => {
   const w = BrowserWindow.getAllWindows()[0]; if (!w) return;
   if (w.isMinimized()) w.restore(); w.focus();
-  const p = projectArg(argv); if (p) w.webContents.send('app:openFile', p);
+  const p = projectArg(argv); if (p) { G.grantFile(p); grantProject(p); w.webContents.send('app:openFile', p); }
 });
