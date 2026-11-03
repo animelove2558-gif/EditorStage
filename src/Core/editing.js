@@ -451,6 +451,17 @@ export function insertClip(seq, clip, at) {
   clip.start = at; seq.clips.push(clip);
 }
 
+/**
+ * Make room for a clip that grows at its end (Remix to a longer length): everything at/after `at` on `track` and on the
+ * sync-locked unlocked tracks moves right by `d` (clips under `at` on those other tracks are split), so nothing that
+ * follows is overwritten and linked picture / sound stay in sync. True when something moved.
+ */
+export function rippleOpen(seq, track, at, d) {
+  if (d <= EPS) return false;
+  const before = seq.clips.map((c) => c.start).join();
+  const n = seq.clips.length; insertGroup(seq, [{ id: '\u0000gap', track, start: at, dur: d }]); seq.clips = seq.clips.filter((c) => c.id !== '\u0000gap');
+  return seq.clips.length !== n || seq.clips.map((c) => c.start).join() !== before;
+}
 /** Insert several simultaneous clips (e.g. linked V+A) with a single ripple of length max(dur). */
 export function insertClips(seq, clips, at) {
   for (const c of clips) c.start = at;

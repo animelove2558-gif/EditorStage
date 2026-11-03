@@ -21,7 +21,7 @@ export default function RemixControls({ clipId, onDone }) {
     setMsg(''); setBusy({ p: 0, label: 'Starting' });
     try {
       const r = await remixClip(c.id, target, { segments, variations, xfade }, (p, label) => setBusy({ p, label }));
-      setMsg(r.segments.length > 1 ? `Remixed to ${r.dur.toFixed(2)} s (${r.segments.length - 1} cut${r.segments.length > 2 ? 's' : ''}, ${Math.round(r.bpm)} BPM${r.cached ? ', analysis from cache' : ''})` : 'The original length fits the target: remix removed');
+      setMsg(r.segments.length > 1 ? `Remixed to ${r.dur.toFixed(2)} s (${r.segments.length - 1} cut${r.segments.length > 2 ? 's' : ''}, ${Math.round(r.bpm)} BPM${r.cached ? ', analysis from cache' : ''})${r.rippled ? '; the clips after it moved later' : ''}` : 'The original length fits the target: remix removed');
       onDone?.(r);
     } catch (e) { setMsg(String(e.message || e)); }
     finally { setBusy(null); }

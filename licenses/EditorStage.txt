@@ -1,4 +1,4 @@
-EditorStage 3.0.0
+EditorStage 3.1.0
 All rights reserved by BYS & RB
 Copyright (c) BYS & RB. All rights reserved.
 

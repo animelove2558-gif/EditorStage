@@ -68,16 +68,20 @@ export const remixRange = (c) => c.remix?.range || [c.inPoint || 0, (c.inPoint |
 
 /**
  * Remix a clip to about `target` seconds (one undo step). The clip's length becomes the remix's length (within a beat of
- * the target); a longer clip overwrites what follows it on its track. Returns { dur, segments, cost, cached }.
+ * the target). A longer clip pushes what follows it later (ripple, with the sync-locked tracks) instead of overwriting it;
+ * params.overwrite = true overwrites instead. Returns { dur, segments, cost, cached, rippled }.
  */
 export async function remixClip(clipId, target, params = {}, onProgress) {
   const s = getState(); const c = s.sequence.clips.find((x) => x.id === clipId);
   const why = remixProblem(s.sequence, c); if (why) throw new Error(why);
   const media = mediaById(c.mediaId); const { hash, an, cached } = await analyzeMedia(media, onProgress);
-  const range = remixRange(c); const p = { ...REMIX_DEFAULTS, ...(c.remix?.params || {}), ...params };
+  const range = remixRange(c); const p = { ...REMIX_DEFAULTS, ...(c.remix?.params || {}), ...params }; delete p.overwrite;
   const plan = planRemix(an, range, Math.max(1, target), p);
+  let rippled = false; const overwrite = !!params.overwrite;
   edit('Remix', ({ seq }) => {
     const x = seq.clips.find((q) => q.id === clipId); if (!x) return; const oldEnd = x.start + x.dur;
+    const newDur = plan.segments.length === 1 ? range[1] - range[0] : plan.dur;
+    if (!overwrite && x.start + newDur > oldEnd) rippled = ed.rippleOpen(seq, x.track, oldEnd, x.start + newDur - oldEnd);
     x.inPoint = range[0];
     if (plan.segments.length === 1) { delete x.remix; x.dur = range[1] - range[0]; } // back to the original music
     else { x.remix = { targetDur: target, range, segments: plan.segments, params: p, hash, cost: +plan.cost.toFixed(3) }; x.dur = plan.dur; }
@@ -85,12 +89,12 @@ export async function remixClip(clipId, target, params = {}, onProgress) {
     ed.fixTransitions(seq);
   });
   onProgress?.(1, 'Done');
-  return { dur: plan.dur, segments: plan.segments, cost: plan.cost, cached, bpm: an.bpm };
+  return { dur: plan.dur, segments: plan.segments, cost: plan.cost, cached, bpm: an.bpm, rippled };
 }
 /** Remove a clip's remix: the original music range again. */
 export function unremixClip(clipId) {
   const c = getState().sequence.clips.find((x) => x.id === clipId); if (!c?.remix) return;
-  edit('Remove Remix', ({ seq }) => { const x = seq.clips.find((q) => q.id === clipId); const [r0, r1] = x.remix.range; delete x.remix; x.inPoint = r0; const oldEnd = x.start + x.dur; x.dur = r1 - r0; if (x.start + x.dur > oldEnd) ed.overwriteRange(seq, x.track, oldEnd, x.start + x.dur, [x.id]); ed.fixTransitions(seq); });
+  edit('Remove Remix', ({ seq }) => { const x = seq.clips.find((q) => q.id === clipId); const [r0, r1] = x.remix.range; delete x.remix; x.inPoint = r0; const oldEnd = x.start + x.dur; if (r1 - r0 > x.dur) ed.rippleOpen(seq, x.track, oldEnd, x.start + (r1 - r0) - oldEnd); x.dur = r1 - r0; if (x.start + x.dur > oldEnd) ed.overwriteRange(seq, x.track, oldEnd, x.start + x.dur, [x.id]); ed.fixTransitions(seq); });
 }
 /** Clip-local times of the remix cuts (the zigzags on the timeline clip). */
 export const remixCuts = (c) => { if (!c.remix?.segments) return []; let u = 0; return c.remix.segments.slice(0, -1).map((s) => (u += s.srcOut - s.srcIn)); };

@@ -194,5 +194,18 @@ const matte = (track, keys) => ({ name: 'Track Matte Key', enabled: true, params
   ok('the target flag moves with the track when tracks are reordered', v2.id === 'V1' && v2.target === true && ed.targetedTracks(s, 'video').join() === 'V1');
 }
 
+// ---- Phase 8 D5: a clip that grows at its end (Remix longer) pushes what follows instead of overwriting it ----
+{
+  const s = seq0([C('m', 'A1', 0, 10), C('n', 'A1', 10, 5), C('v', 'V1', 4, 12), C('w', 'V1', 18, 2)]);
+  const moved = ed.rippleOpen(s, 'A1', 10, 4);
+  ok('the next clip on the track moves by the growth', moved && near(get(s, 'n').start, 14) && near(get(s, 'n').dur, 5), J(s.clips));
+  ok('the growing clip itself stays where it is', near(get(s, 'm').start, 0) && near(get(s, 'm').dur, 10));
+  ok('a sync-locked track is split at the point and its later part moves too', near(get(s, 'v').dur, 6) && s.clips.some((c) => c.track === 'V1' && near(c.start, 14) && near(c.dur, 6)) && near(get(s, 'w').start, 22), J(on(s, 'V1')));
+  const s2 = seq0([C('m', 'A1', 0, 10), C('k', 'A2', 12, 3)], {}); s2.tracks.find((t) => t.id === 'A2').sync = false;
+  ed.rippleOpen(s2, 'A1', 10, 4);
+  ok('a track without Sync Lock is not moved', near(get(s2, 'k').start, 12));
+  ok('nothing after the clip: nothing moves', ed.rippleOpen(seq0([C('m', 'A1', 0, 10)]), 'A1', 10, 4) === false);
+}
+
 console.log(`tracks: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
