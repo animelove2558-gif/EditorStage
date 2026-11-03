@@ -2,8 +2,11 @@ import { useSyncExternalStore } from 'react';
 import { compareDefaults } from './compare';
 
 // ---- Minimal observable store with snapshot-based undo/redo (History panel) ----
+/** id of a project (kept in the .esproj): names its auto-save history until it has a file of its own */
+export const newProjectId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 const initial = () => ({
   projectName: 'Untitled',
+  projectId: newProjectId(),
   seqs: {}, // inactive sequences by id (the active one lives in sequence)
   projectPath: null,
   dirty: false,
@@ -186,6 +189,6 @@ export function resetProject() {
 }
 export function loadProject(data, path) {
   undoStack.length = 0; redoStack.length = 0; breakCoalesce(); resetSaved();
-  state = { ...initial(), ...data, projectPath: path, dirty: false, playing: false };
+  state = { ...initial(), ...data, projectId: data.projectId || newProjectId(), projectPath: path, dirty: false, playing: false };
   emit();
 }

@@ -9,8 +9,8 @@ import { PANEL_COMPONENTS } from './Panels';
 import Dialogs from './Dialogs';
 import { sequenceEnd } from '../Core/editing';
 import { installAudioStageSync, rearmWatches } from '../Services/audiostage';
-import { startAutoSave } from '../Services/versions';
-import { run, confirmDiscard } from '../Core/commands';
+import { startAutoSave, bootRecovery, recoverSession, clearSessionMarker } from '../Services/versions';
+import { run, confirmDiscard, openDialog } from '../Core/commands';
 import { loadPrefs, onPrefs } from '../Core/prefs';
 import { setAudioOutput } from '../Services/audioEngine';
 
@@ -38,7 +38,15 @@ export default function App() {
   }, []);
   useEffect(() => { // window close asks to save; .esproj opened from Explorer (start-up or a second launch)
     const es = window.editorstage; if (!es?.onCloseRequest) return;
-    es.onCloseRequest(() => confirmDiscard(() => es.closeOk()));
+    // a normal close removes the crash marker (Services/versions.js) before the window goes
+    es.onCloseRequest(() => confirmDiscard(() => { clearSessionMarker().finally(() => es.closeOk()); }));
+    // the previous session did not close normally: offer its newest auto-save
+    bootRecovery().then((r) => {
+      if (!r) return;
+      const when = new Date(r.rev.time).toLocaleString();
+      openDialog('confirm', { title: 'Recover Project', message: `EditorStage did not close normally last time. Restore ${r.marker.projectName || 'the project'} from the auto-save of ${when}?`, okLabel: 'Restore',
+        onOk: () => recoverSession(r).then(() => set((s) => ({ log: [...s.log.slice(-49), `Recovered ${r.marker.projectName || 'project'} from the auto-save of ${when} - save it to keep the changes`] }))).catch((e) => set((s) => ({ log: [...s.log.slice(-49), 'Recovery failed: ' + (e.message || e)] }))) });
+    }).catch(() => {});
     es.onOpenFile((p) => run('file.openExternal', p));
     es.takeOpenFile().then((p) => p && run('file.openExternal', p));
   }, []);

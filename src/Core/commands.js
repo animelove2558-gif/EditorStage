@@ -8,7 +8,8 @@ import { addTransition } from './dnd';
 import { addGraphic } from '../Services/graphics';
 import { peaksFor } from '../Services/waveform';
 import { editInAudioStage } from '../Services/audiostage';
-import { commitRevision } from '../Services/versions';
+import { commitRevision, adoptAutosaveHistory, latestRevision, historyDirFor, restoreRevision } from '../Services/versions';
+import { projectJson, parseProject } from './projectFile';
 import { trimHead, sourceAt } from './clipTime';
 import { DEFAULT_MOTION } from './params';
 import { markerAt } from './markers';
@@ -280,7 +281,6 @@ function applyDefaultTransition(kinds) {
 const recentGet = () => { try { return JSON.parse(localStorage.getItem('es-recent') || '[]'); } catch { return []; } };
 export const recentAdd = (p) => { try { localStorage.setItem('es-recent', JSON.stringify([p, ...recentGet().filter((x) => x !== p)].slice(0, 10))); } catch { /* storage unavailable */ } };
 export const getRecent = recentGet;
-const projectJson = (s) => JSON.stringify({ sequence: s.sequence, media: s.media, projectName: s.projectName, bins: s.bins, seqs: s.seqs }, null, 2);
 async function warnMissingFonts() {
   const { missingFonts } = await import('../Services/fonts');
   const miss = await missingFonts(getState());
@@ -349,10 +349,23 @@ export function confirmDiscard(then) {
   openDialog('unsaved', { name: s.projectName, onSave: async () => { await commands['file.save'](); if (!getState().dirty) then(); }, onDiscard: then });
 }
 const guarded = (f) => (...a) => confirmDiscard(() => f(...a));
+/** A project file that cannot be read or is damaged: say why and offer its newest revision from the Project History. */
+async function openFailed(p, e) {
+  const name = p.split(/[\\/]/).pop(); const why = errText(e);
+  notify(`Cannot open ${name}: ${why}`);
+  const dir = historyDirFor(p); const rev = await latestRevision(dir).catch(() => null);
+  if (!rev) return openDialog('confirm', { title: 'Cannot Open Project', message: `${name} cannot be opened: ${why}. There is no project history or auto-save for it.`, okLabel: 'OK' });
+  openDialog('confirm', { title: 'Project File Damaged', message: `${name} cannot be opened: ${why}. Open the newest revision from its project history instead ("${rev.label}", ${new Date(rev.time).toLocaleString()})?`, okLabel: 'Open Revision',
+    onOk: async () => { resetProject(); set({ projectPath: p, projectName: name.replace(/\.esproj$/i, '') }); try { await restoreRevision(rev.id, dir); notify(`Opened revision "${rev.label}" of ${name} - save to repair the project file`); } catch (x) { notify('Cannot restore the revision: ' + errText(x)); } } });
+}
+/** Open a project file; false (with a message) when it cannot be read or is damaged. */
 async function openPath(p) {
-  loadProject(JSON.parse(await window.editorstage.readText(p)), p); recentAdd(p); warnMissingFonts().catch(() => {});
+  let data;
+  try { data = parseProject(await window.editorstage.readText(p)); } catch (e) { await openFailed(p, e); return false; }
+  loadProject(data, p); recentAdd(p); warnMissingFonts().catch(() => {});
   // missing source files: mark offline and offer Link Media (like Premiere on open)
   const { checkOffline } = await import('../Services/mediaLink'); if ((await checkOffline()).length) set({ dialog: { type: 'linkMedia', props: {} } });
+  return true;
 }
 /** The readable part of an IPC error ("Error invoking remote method 'fs:write': Error: ENOSPC: ..." -> "ENOSPC: ..."). */
 export const errText = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, '');
@@ -366,6 +379,9 @@ function saveFailed(path, e) {
 async function saveProject(path) {
   const tok = saveToken(); const text = projectJson(getState());
   try { await window.editorstage.writeFile(path, text); } catch (e) { saveFailed(path, e); return false; }
+  const before = getState();
+  // first Save of a never-saved project: its auto-save history moves next to the file
+  if (!before.projectPath) await adoptAutosaveHistory(before.projectId, before.projectName, path).catch(() => false);
   set({ projectPath: path }); markSaved(tok); recentAdd(path);
   // every Save also records a revision in the project history (deduplicated, so it costs almost nothing)
   commitRevision('Save').catch((e) => notify('History: ' + e.message));
@@ -587,7 +603,7 @@ export const commands = {
   'file.newCountdown': dialog('synthetic', { type: 'countdown' }),
   'file.newTransparentVideo': dialog('synthetic', { type: 'transparent' }),
   'file.open': guarded(async () => { const [p] = await window.editorstage.openDialog('project'); if (p) await openPath(p); }),
-  'file.openRecent': guarded((p) => openPath(p).catch(() => notify('Could not open ' + p))),
+  'file.openRecent': guarded((p) => openPath(p).catch((e) => notify(`Could not open ${p}: ${errText(e)}`))),
   'file.close': () => { if (!closeActivePanel()) notify('No panel is active'); },
   'file.closeProject': guarded(() => resetProject()),
   'file.save': async () => {
@@ -603,7 +619,7 @@ export const commands = {
   'file.revert': () => { const p = getState().projectPath; if (!p) return notify('Nothing to revert (project not saved)'); if (!getState().dirty) return openPath(p);
     openDialog('confirm', { title: 'Revert', message: `Discard all changes since ${p.split(/[\\/]/).pop()} was last saved?`, okLabel: 'Revert', onOk: () => openPath(p) }); },
   /** a project opened from Explorer while EditorStage runs (or at start-up) */
-  'file.openExternal': guarded((p) => openPath(p).catch(() => notify('Could not open ' + p))),
+  'file.openExternal': guarded((p) => openPath(p).catch((e) => notify(`Could not open ${p}: ${errText(e)}`))),
   'file.saveRevision': () => openDialog('revision'),
   'file.capture': dialog('capture'),
   'file.import': async () => { const paths = await window.editorstage.openDialog('media', true); if (paths.length) await importAny(paths); },
