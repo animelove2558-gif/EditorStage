@@ -48,7 +48,8 @@ const frame = new Uint8Array(64 * 1024);
 // cancel
 {
   J.jobStart('d', ['-e', 'setInterval(()=>{},1000)']);
-  J.jobCancel('d');
+  const t0 = Date.now(); await J.jobCancel('d');
+  ok('cancel waits until the encoder exited (its file is released)', Date.now() - t0 < 3000 && running() === 0, String(running()));
   ok('write after cancel returns false', (await J.jobWrite('d', frame)) === false);
 }
 // E16: every child process is stopped when the app quits
