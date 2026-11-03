@@ -274,7 +274,7 @@ export function EffectControls() {
         </Section>
         <Section title="Time Remapping" right={<span onClick={(e) => e.preventDefault()}><SpeedCurvePicker clip={clip} /></span>}>
           {group(REMAP_DEFS, remap, (c) => (c.timeRemap = { ...DEFAULT_TIMEREMAP(), ...c.timeRemap }), 'Time Remapping')}
-          {(clip.reverse || clip.maintainPitch || clip.frameSampling) && <div className="dim note">{[clip.reverse && 'Reversed', clip.maintainPitch && 'Maintain Audio Pitch', clip.frameSampling === 'blend' && 'Frame Blending'].filter(Boolean).join(' · ')} (Clip &gt; Speed/Duration)</div>}
+          {(clip.reverse || clip.maintainPitch || clip.frameSampling) && <div className="dim note">{[clip.reverse && 'Reversed', clip.maintainPitch && 'Maintain Audio Pitch', clip.frameSampling === 'blend' && 'Frame Blending', clip.frameSampling === 'flow' && 'Optical Flow'].filter(Boolean).join(' · ')} (Clip &gt; Speed/Duration)</div>}
         </Section>
         {vfx.map((fx) => fxSection(fx, VIDEO_FX))}
       </>}

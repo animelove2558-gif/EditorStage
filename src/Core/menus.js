@@ -22,7 +22,7 @@ const scaledToFrame = () => { const cs = selClips().filter((c) => c.mediaId); re
 const sampled = (mode) => () => { const cs = selClips().filter((c) => c.mediaId); return cs.length > 0 && cs.every((c) => (c.frameSampling || 'sample') === mode); };
 const labelSub = () => sub('Label', [...LABELS.map(([n, hex]) => ({ ...m(n, 'clip.label'), arg: hex, swatch: hex })), S, m('Select Label Group', 'clip.selectLabelGroup')]);
 const replaceSub = () => sub('Replace With Clip', [m('From Source Monitor', 'clip.replaceFromSource', undefined, mediaSel), m('From Bin', 'clip.replaceFromBin', undefined, mediaSel)]);
-const timeInterpSub = () => sub('Time Interpolation', [check({ ...m('Frame Sampling', 'clip.timeInterpolation', undefined, mediaSel), arg: 'sample' }, sampled('sample')), check({ ...m('Frame Blending', 'clip.timeInterpolation', undefined, mediaSel), arg: 'blend' }, sampled('blend'))]);
+const timeInterpSub = () => sub('Time Interpolation', [check({ ...m('Frame Sampling', 'clip.timeInterpolation', undefined, mediaSel), arg: 'sample' }, sampled('sample')), check({ ...m('Frame Blending', 'clip.timeInterpolation', undefined, mediaSel), arg: 'blend' }, sampled('blend')), check({ ...m('Optical Flow', 'clip.timeInterpolation', undefined, mediaSel), arg: 'flow' }, sampled('flow'))]);
 const multicamSub = () => sub('Multi-Camera', [m('Create Multi-Camera Source Sequence...', 'clip.multicamCreate'), m('Enable', 'clip.multicamEnable'), m('Toggle Multi-Camera View', 'clip.multicamView'), ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => m(`Camera ${n}`, `clip.multicam${n}`, String(n)))]);
 
 /**

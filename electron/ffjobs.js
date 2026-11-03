@@ -47,7 +47,13 @@ function createJobs(ffmpegPath) {
     await j.exited;
     return jobResult(j);
   };
-  const jobCancel = (id) => { const j = jobs.get(id); if (j) { try { j.p.kill(); } catch { /* gone */ } jobs.delete(id); } return true; };
+  /** Stop the encoder and wait (up to 3 s) until it exited, so its output file is released and can be removed. */
+  const jobCancel = async (id) => {
+    const j = jobs.get(id); if (!j) return true;
+    jobs.delete(id); try { j.p.kill(); } catch { /* gone */ }
+    await Promise.race([j.exited, new Promise((r) => setTimeout(r, 3000))]);
+    return true;
+  };
   return { jobStart, jobWrite, jobEnd, jobCancel, jobs };
 }
 

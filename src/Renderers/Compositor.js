@@ -191,6 +191,36 @@ void main(){ vec4 bg=texture(u_bg,uv), fa=texture(u_fa,uv), fb=texture(u_fb,uv);
 const MIX_FRAG = `#version 300 es
 precision highp float; in vec2 uv; out vec4 o; uniform sampler2D u_a, u_b; uniform float u_w;
 void main(){ o = mix(texture(u_a, uv), texture(u_b, uv), u_w); }`;
+// ---- Optical Flow (Time Interpolation): motion between the two source frames, then both frames are moved part of the way ----
+// FLOW: block matching on a small luma grid. For each cell of A, the shift d (in cells, |d| <= OF_R) whose 5x5 patch of B
+// matches best (sum of absolute differences, a small cost for long moves so flat areas stay still); stored as 0..1.
+const OF_R = 8;
+const OF_FRAG = `#version 300 es
+precision highp float; in vec2 uv; out vec4 o; uniform sampler2D u_a, u_b; uniform vec2 u_cell;
+float L(sampler2D t, vec2 p){ vec3 c = texture(t, p).rgb; return dot(c, vec3(0.299, 0.587, 0.114)); }
+void main(){
+  float pa[25]; int k = 0;
+  for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) { pa[k++] = L(u_a, uv + vec2(x, y) * u_cell); }
+  float best = 1e9; vec2 bd = vec2(0.); float zero = 0.;
+  for (int dy = -${OF_R}; dy <= ${OF_R}; dy++) for (int dx = -${OF_R}; dx <= ${OF_R}; dx++) {
+    float s = 0.; k = 0; vec2 off = vec2(dx, dy) * u_cell;
+    for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) { s += abs(pa[k++] - L(u_b, uv + off + vec2(x, y) * u_cell)); }
+    if (dx == 0 && dy == 0) zero = s;
+    s += 0.004 * length(vec2(dx, dy));
+    if (s < best) { best = s; bd = vec2(dx, dy); }
+  }
+  o = vec4(bd / float(${OF_R * 2}) + 0.5, clamp((zero - best) * 4., 0., 1.), 1.);
+}`;
+// SMOOTH: average the shifts around each cell (weighted by how sure each match is) to remove single wrong matches
+const OF_SMOOTH_FRAG = `#version 300 es
+precision highp float; in vec2 uv; out vec4 o; uniform sampler2D u_tex; uniform vec2 u_cell;
+void main(){ vec3 acc = vec3(0.); for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) { vec4 f = texture(u_tex, uv + vec2(x, y) * u_cell); float w = 0.05 + f.b; acc += vec3((f.rg - 0.5) * w, w); }
+  o = vec4(acc.xy / acc.z + 0.5, texture(u_tex, uv).b, 1.); }`;
+// WARP: the in-between frame at u_w: A moved forward by u_w of the motion, B moved back by the rest, then mixed
+const OF_WARP_FRAG = `#version 300 es
+precision highp float; in vec2 uv; out vec4 o; uniform sampler2D u_a, u_b, u_flow; uniform float u_w; uniform vec2 u_cell;
+void main(){ vec2 d = (texture(u_flow, uv).rg - 0.5) * float(${OF_R * 2}) * u_cell;
+  o = mix(texture(u_a, clamp(uv - u_w * d, 0., 1.)), texture(u_b, clamp(uv + (1. - u_w) * d, 0., 1.)), u_w); }`;
 const FIELD_FRAG = `#version 300 es
 precision highp float;
 in vec2 uv; out vec4 o; uniform sampler2D u_tex; uniform float u_h; uniform int u_rev; uniform int u_dei; uniform int u_flk;
@@ -374,11 +404,38 @@ export class Compositor {
     return { tex: e.tex, w: e.w, h: e.h };
   }
 
+  /** a cached render target (RGBA8, linear, clamped) for one pass of one clip */
+  passTarget(map, key, w, h) {
+    const gl = this.gl; this[map] = this[map] || new Map(); let e = this[map].get(key);
+    if (!e || e.w !== w || e.h !== h) {
+      if (e) { gl.deleteTexture(e.tex); gl.deleteFramebuffer(e.fbo); }
+      const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      e = { tex, fbo, w, h }; this[map].set(key, e);
+    }
+    return e;
+  }
+  /** Optical Flow: the frame between a and b at w, with motion estimated on a grid of at most 128 cells across */
+  flowPass(key, a, b, w) {
+    const gl = this.gl; if (a.w !== b.w || a.h !== b.h) return a;
+    const pf = this.prog('ofFlow', OF_FRAG), ps = this.prog('ofSmooth', OF_SMOOTH_FRAG), pw = this.prog('ofWarp', OF_WARP_FRAG); if (!pf || !ps || !pw) return this.mixPass(key, a, b, w);
+    const lw = Math.max(8, Math.min(128, a.w)), lh = Math.max(8, Math.round((lw * a.h) / a.w)); const cell = [1 / lw, 1 / lh];
+    const f1 = this.passTarget('_flowA', key, lw, lh), f2 = this.passTarget('_flowB', key, lw, lh), out = this.passTarget('_flowOut', key, a.w, a.h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f1.fbo); gl.viewport(0, 0, lw, lh); this.use(pf);
+    this.bind(0, a.tex); this.bind(1, b.tex); this.i1(pf, 'u_a', 0); this.i1(pf, 'u_b', 1); this.f2(pf, 'u_cell', cell); this.quad();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f2.fbo); this.use(ps); this.bind(0, f1.tex); this.i1(ps, 'u_tex', 0); this.f2(ps, 'u_cell', cell); this.quad();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, out.fbo); gl.viewport(0, 0, a.w, a.h); this.use(pw);
+    this.bind(0, a.tex); this.bind(1, b.tex); this.bind(2, f2.tex); this.i1(pw, 'u_a', 0); this.i1(pw, 'u_b', 1); this.i1(pw, 'u_flow', 2); this.f1(pw, 'u_w', w); this.f2(pw, 'u_cell', cell);
+    this.quad(); gl.viewport(0, 0, this.w, this.h);
+    return { tex: out.tex, w: out.w, h: out.h };
+  }
+
   renderClip(clip, t, el, seqDims, ctx) {
     const gl = this.gl;
     let st = el && el.tex ? el : this.upload(clip.elKey || clip.id, el); if (!st) return null;
     const bl = !el?.tex && ctx?.deps?.blendFor?.(clip, t);
-    if (bl) { const sb = this.upload(`${clip.elKey || clip.id}#b`, bl.el); if (sb) st = this.mixPass(clip.elKey || clip.id, st, sb, bl.w); }
+    if (bl) { const sb = this.upload(`${clip.elKey || clip.id}#b`, bl.el); if (sb) st = clip.frameSampling === 'flow' ? this.flowPass(clip.elKey || clip.id, st, sb, bl.w) : this.mixPass(clip.elKey || clip.id, st, sb, bl.w); }
     if (fieldOptionsActive(clip) && !el?.tex) st = this.fieldPass(clip.elKey || clip.id, st, clip.fieldOptions);
     const local = paramLocal(clip, t);
     const rb = !el?.tex && (clip.effects || []).find((e) => e.enabled && e.name === 'Remove Background');

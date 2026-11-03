@@ -315,7 +315,7 @@ function clipItemCommands() {
     /** Clip > Label > colour (arg = colour hex) and Select Label Group (every clip with the label of the selection) */
     'clip.label': (hex) => hex && edit('Label', ({ seq, sel }) => seq.clips.filter((c) => sel.includes(c.id)).forEach((c) => { c.color = hex; })),
     'clip.selectLabelGroup': () => { const cols = new Set(selClips().map((c) => c.color).filter(Boolean)); if (!cols.size) return; const s = getState(); set({ selection: s.sequence.clips.filter((c) => cols.has(c.color)).filter(onUnlocked(s.sequence)).map((c) => c.id) }); },
-    /** Time Interpolation (arg 'sample' | 'blend'): the Frame Sampling / Frame Blending choice of Speed/Duration */
+    /** Time Interpolation (arg 'sample' | 'blend' | 'flow'): Frame Sampling / Frame Blending / Optical Flow of Speed/Duration */
     'clip.timeInterpolation': (mode = 'sample') => edit('Time Interpolation', ({ seq, sel }) => seq.clips.filter((c) => sel.includes(c.id) && c.mediaId).forEach((c) => { c.frameSampling = mode === 'sample' ? undefined : mode; })),
     /** Scale to Frame Size (toggle): fit the source into the frame (on, default) or keep its own pixel size (off) */
     'clip.scaleToFrame': () => { const cs = selClips().filter((c) => c.mediaId); if (!cs.length) return notify('Select a video or still clip first');

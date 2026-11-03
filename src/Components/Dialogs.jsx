@@ -73,7 +73,7 @@ function SpeedDialog() {
       <div className="mrow"><Check checked={pitch} onChange={setPitch}>Maintain Audio Pitch</Check></div>
       <div className="mrow"><Check checked={ripple} onChange={setRipple}>Ripple Edit, Shifting Trailing Clips</Check></div>
       <Row label="Time Interpolation"><select value={sampling} onChange={(e) => setSampling(e.target.value)}>
-        <option value="sample">Frame Sampling</option><option value="blend">Frame Blending</option>
+        <option value="sample">Frame Sampling</option><option value="blend">Frame Blending</option><option value="flow">Optical Flow</option>
       </select></Row>
       <div className="dim">{clips.length > 1 ? `${clips.length} clips. ` : ''}Speed curves (Time Remapping) stretch with the clip. Without ripple the clip stops at the next clip.</div>
     </Modal>

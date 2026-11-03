@@ -276,7 +276,7 @@ function untouchedReason(c, m) {
   if (c.lumetri && hasGrade(c.lumetri)) return 'a clip has a Lumetri grade';
   if ((c.masks || []).length) return 'a clip has masks';
   if (c.filter?.id || (c.canvasFill && c.canvasFill.type !== 'none')) return 'a clip has a filter or canvas fill';
-  if (c.frameHold?.on || c.fieldOptions?.reverse || c.fieldOptions?.deinterlace || c.fieldOptions?.flicker || (c.timeInterp && c.timeInterp !== 'sample')) return 'a clip has frame hold / field options / frame blending';
+  if (c.frameHold?.on || c.fieldOptions?.reverse || c.fieldOptions?.deinterlace || c.fieldOptions?.flicker || (c.frameSampling && c.frameSampling !== 'sample')) return 'a clip has frame hold / field options / frame blending / optical flow';
   if (Math.abs(c.speed || 1) !== 1 || c.reverse || !isDefault(c.timeRemap?.speed, 100)) return 'a clip is retimed';
   if (c.scaleToFrame === false) return 'a clip is not scaled to the frame size';
   const D = DEFAULT_MOTION(); if (Object.keys(D).some((k) => !isDefault(c.motion?.[k], D[k].v))) return 'a clip has Motion changes';

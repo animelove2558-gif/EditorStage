@@ -186,11 +186,12 @@ function clipWindow(seq, c) {
 export const clipSourceTime = (c, t, media) => sourceAt(c, t, media?.fps || getState().sequence.fps, media?.duration ?? Infinity);
 
 /**
- * Frame Blending (Clip > Speed/Duration > Time Interpolation): at a fractional source frame the clip shows the two
- * neighbouring frames mixed. Returns { t0, t1, w } (seek targets of the main and the blend element) or null.
+ * Frame Blending / Optical Flow (Clip > Speed/Duration > Time Interpolation): at a fractional source frame the clip shows
+ * the two neighbouring frames mixed (Optical Flow: moved along the motion between them first, Compositor.flowPass).
+ * Returns { t0, t1, w } (seek targets of the main and the blend element) or null.
  */
 export function blendTimes(c, t, media) {
-  if (c.frameSampling !== 'blend' || !media || media.kind !== 'video' || c.frameHold?.on) return null;
+  if ((c.frameSampling !== 'blend' && c.frameSampling !== 'flow') || !media || media.kind !== 'video' || c.frameHold?.on) return null;
   const fps = media.fps || 30; const f = clipSourceTime(c, t, media) * fps; const f0 = Math.floor(f + 1e-6); const w = f - f0;
   if (w < 0.02 || w > 0.98) return null;
   const last = Math.max(0, (media.duration || 0) - 0.04);
