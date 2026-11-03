@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, session, protocol, net, shell
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs/promises');
-const { atomicWrite } = require('./fileGuard');
+const { atomicWrite, renameRetry } = require('./fileGuard');
 require('./media');
 require('./workflow');
 
@@ -84,6 +84,8 @@ const MEDIA_EXT = new Set('mp4 mov avi mkv webm prores hevc h265 h264 mpeg mpg m
 ipcMain.handle('fs:listRoots', async () => { const out = []; for (const l of 'CDEFGHIJKLMNOPQRSTUVWXYZ') { try { await fs.access(l + ':\\'); out.push(l + ':\\'); } catch { /* none */ } } return process.platform === 'win32' ? out : ['/']; });
 ipcMain.handle('fs:listDir', async (_e, dir) => { try { const ents = await fs.readdir(dir, { withFileTypes: true }); return { dirs: ents.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name).sort(), files: ents.filter((e) => e.isFile() && MEDIA_EXT.has(e.name.split('.').pop().toLowerCase())).map((e) => e.name).sort() }; } catch { return { dirs: [], files: [] }; } });
 
+// rename over an existing file (finished exports: <name>.es-part.<ext> -> <name>.<ext>)
+ipcMain.handle('fs:rename', async (_e, from, to) => { await renameRetry(from, to); return true; });
 ipcMain.handle('fs:rm', async (_e, p) => { try { await fs.rm(p, { force: true }); return true; } catch { return false; } });
 ipcMain.handle('shell:open', (_e, p) => shell.openPath(p));
 ipcMain.handle('shell:reveal', (_e, p) => shell.showItemInFolder(p));

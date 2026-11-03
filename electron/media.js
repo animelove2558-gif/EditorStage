@@ -1,11 +1,12 @@
 // Main-process media engine: FFmpeg fallback transcoding for formats Chromium cannot decode natively.
 const { app, ipcMain } = require('electron');
-const { spawn } = require('child_process');
+const { createJobs, spawnTracked } = require('./ffjobs');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
 const { ffmpegPath, hasEncoder } = require('./ffmpegBin');
+const { renameRetry } = require('./fileGuard');
 
 const ARGS = {
   video: (i, o) => ['-y', '-i', i, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:a', 'aac', '-movflags', '+faststart', o],
@@ -27,14 +28,21 @@ async function conversions(kind) {
   return out;
 }
 const runOnce = (bin, args) => new Promise((resolve) => {
-  const p = spawn(bin, args, { windowsHide: true });
+  const p = spawnTracked(bin, args, { windowsHide: true });
   let err = '';
   p.stderr.on('data', (d) => { err = (err + d).slice(-600); });
   p.on('error', (e) => resolve({ ok: false, error: String(e) }));
   p.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim().split('\n').pop() || `ffmpeg exit ${code}` }));
 });
 
-ipcMain.handle('media:transcode', async (_e, src, kind) => {
+// one conversion per source at a time: a second request for the same file waits for the first
+const transcoding = new Map();
+ipcMain.handle('media:transcode', (_e, src, kind) => {
+  const k = `${kind}|${src}`;
+  if (!transcoding.has(k)) transcoding.set(k, transcode(src, kind).catch((e) => ({ ok: false, error: String(e.message || e) })).finally(() => transcoding.delete(k)));
+  return transcoding.get(k);
+});
+async function transcode(src, kind) {
   const bin = ffmpegPath();
   if (!bin || !fs.existsSync(bin)) return { ok: false, error: 'FFmpeg binary not available' };
   const dir = path.join(app.getPath('userData'), 'media-cache');
@@ -46,40 +54,19 @@ ipcMain.handle('media:transcode', async (_e, src, kind) => {
   if (!ways.length) return { ok: false, error: 'this FFmpeg build has no H.264 or VP9 encoder to convert the video with' };
   let r = null;
   for (const w of ways) { // an encoder can be listed but not work here (Media Foundation without a codec): try the next one
-    const out = path.join(dir, `${key}.${w.ext}`);
-    r = await runOnce(bin, w.args(src, out));
-    if (r.ok) return { ok: true, path: out };
-    try { fs.rmSync(out, { force: true }); } catch { /* partial file */ }
+    // FFmpeg writes <key>.part.<ext>; only a finished conversion is renamed to the cache name, so a crash or quit
+    // during the conversion never leaves a half file that a later run would take as ready
+    const out = path.join(dir, `${key}.${w.ext}`); const part = path.join(dir, `${key}.part.${w.ext}`);
+    r = await runOnce(bin, w.args(src, part));
+    if (r.ok) { try { await renameRetry(part, out); return { ok: true, path: out }; } catch (e) { r = { ok: false, error: String(e.message || e) }; } }
+    try { fs.rmSync(part, { force: true }); } catch { /* partial file */ }
   }
   return r;
-});
+}
 
 // ---- Encode jobs: raw frames are piped into FFmpeg's stdin. Several can run at once (Export Queue, generated media). ----
 // job ids are chosen by the renderer; the legacy export:* calls use the id 'export'.
-const jobs = new Map(); // id -> { p, err, progress }
-function jobStart(id, args) {
-  const bin = ffmpegPath();
-  if (!bin || !fs.existsSync(bin)) return { ok: false, error: 'FFmpeg binary not available' };
-  if (jobs.has(id)) { try { jobs.get(id).p.kill(); } catch { /* gone */ } }
-  const p = spawn(bin, args, { windowsHide: true }); const j = { p, err: '' }; jobs.set(id, j);
-  p.stderr.on('data', (d) => { j.err = (j.err + d).slice(-1500); });
-  p.stdin.on('error', () => {});
-  return { ok: true };
-}
-const jobWrite = (id, buf) => new Promise((resolve) => {
-  const j = jobs.get(id); if (!j || j.p.exitCode !== null) return resolve(false); // the encoder already stopped
-  const gone = () => resolve(false); j.p.once('close', gone);
-  const ok = () => { j.p.removeListener('close', gone); resolve(true); };
-  const okw = j.p.stdin.write(Buffer.isBuffer(buf) ? buf : Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength));
-  if (okw) ok(); else j.p.stdin.once('drain', ok);
-});
-const jobEnd = (id) => new Promise((resolve) => {
-  const j = jobs.get(id); if (!j) return resolve({ ok: false, error: 'no export running' });
-  jobs.delete(id);
-  j.p.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: j.err.trim().split('\n').slice(-2).join(' ') }));
-  j.p.stdin.end();
-});
-const jobCancel = (id) => { const j = jobs.get(id); if (j) { j.p.kill(); jobs.delete(id); } return true; };
+const { jobStart, jobWrite, jobEnd, jobCancel } = createJobs(ffmpegPath);
 ipcMain.handle('job:start', (_e, id, args) => jobStart(id, args));
 ipcMain.handle('job:write', (_e, id, buf) => jobWrite(id, buf));
 ipcMain.handle('job:end', (_e, id) => jobEnd(id));
@@ -95,7 +82,7 @@ ipcMain.handle('export:cancel', () => jobCancel('export'));
 const runs = new Map();
 ipcMain.handle('ffmpeg:run', (e, args, id) => new Promise((resolve) => {
   const bin = ffmpegPath(); if (!bin || !fs.existsSync(bin)) return resolve({ ok: false, error: 'FFmpeg binary not available' });
-  const p = spawn(bin, args, { windowsHide: true }); let err = ''; const run = { p, killed: false }; if (id) runs.set(id, run);
+  const p = spawnTracked(bin, args, { windowsHide: true }); let err = ''; const run = { p, killed: false }; if (id) runs.set(id, run);
   p.stderr.on('data', (d) => {
     err += d; if (err.length > 4e6) err = err.slice(-2e6);
     if (id) { const m = /time=(\d+):(\d+):(\d+(?:\.\d+)?)[^\n]*$/.exec(String(d)); if (m) { try { e.sender.send('ffmpeg:progress', id, +m[1] * 3600 + +m[2] * 60 + +m[3]); } catch { /* window gone */ } } }
@@ -109,7 +96,7 @@ ipcMain.handle('app:tmp', () => app.getPath('temp'));
 // ---- Probe: stream info via `ffmpeg -i` ----
 ipcMain.handle('media:probe', (_e, src) => new Promise((resolve) => {
   const bin = ffmpegPath(); if (!bin) return resolve({ ok: false });
-  const p = spawn(bin, ['-hide_banner', '-i', src], { windowsHide: true });
+  const p = spawnTracked(bin, ['-hide_banner', '-i', src], { windowsHide: true });
   let err = ''; p.stderr.on('data', (d) => { err += d; });
   p.on('error', () => resolve({ ok: false }));
   p.on('close', () => {

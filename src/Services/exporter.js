@@ -328,7 +328,20 @@ const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(
  *         state (snapshot; default: now), jobId }.
  * Calls onProgress(0..1, text). cancel() -> true aborts. Resolves { ok, error?, smart?, encoder?, notes[] }.
  */
+/** The file an export renders into: <name>.es-part.<ext> beside the target (same container), renamed when finished. */
+export const partPath = (p) => p.replace(/(\.[^.\\/]+)?$/, (x) => `.es-part${x}`);
+const ipcError = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, '');
 export async function exportSequence(opts, onProgress, cancel) {
+  // render into a temporary name and rename it once the encoder finished: a cancelled or failed export never leaves a
+  // half-written file, and an existing file of the same name stays intact until the new one is complete
+  const es = window.editorstage; const part = partPath(opts.path);
+  let r;
+  try { r = await renderExport({ ...opts, path: part, finalPath: opts.path }, onProgress, cancel); } catch (e) { r = { ok: false, error: ipcError(e) }; }
+  if (r?.ok) { try { await es.rename(part, opts.path); } catch (e) { r = { ok: false, error: `Cannot replace ${opts.path}: ${ipcError(e)}` }; } }
+  if (!r?.ok) await es.removeFile(part).catch(() => {});
+  return r;
+}
+async function renderExport(opts, onProgress, cancel) {
   const es = window.editorstage; const P = PRESETS[opts.preset]; const id = opts.jobId || `export-${uid()}`; const notes = [];
   let state = opts.state || structuredClone({ ...getState(), log: [] });
   const dur = opts.end - opts.start; if (dur <= 0) return { ok: false, error: 'Empty range' };
@@ -336,7 +349,7 @@ export async function exportSequence(opts, onProgress, cancel) {
   const capTrack = state.sequence.tracks.find((t) => t.kind === 'caption' && state.sequence.clips.some((c) => c.track === t.id && c.caption));
   if (opts.sidecar && capTrack) {
     const sq = { ...state.sequence, clips: state.sequence.clips.filter((c) => c.caption && c.start < opts.end && c.start + c.dur > opts.start).map((c) => ({ ...c, start: c.start - opts.start })) };
-    await es.writeFile(opts.path.replace(/\.[^.\\/]+$/, '') + '.' + opts.sidecar, '﻿' + (opts.sidecar === 'vtt' ? captionsToVtt : captionsToSrt)(sq, capTrack.id));
+    await es.writeFile((opts.finalPath || opts.path).replace(/\.[^.\\/]+$/, '') + '.' + opts.sidecar, '﻿' + (opts.sidecar === 'vtt' ? captionsToVtt : captionsToSrt)(sq, capTrack.id));
   }
   if (opts.burnCaptions === false) state = { ...state, sequence: { ...state.sequence, clips: state.sequence.clips.filter((c) => !c.caption) } };
   const tmp = await es.tmpDir(); const sep = tmp.includes('\\') ? '\\' : '/'; const temps = [];
