@@ -95,4 +95,21 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
     for (let i = 0; i < 200 && E.store.getState().exportQueue.find((x) => x.id === id).status !== 'rendering'; i++) await T.tick(20);
     await T.tick(150); E.exportQueue.cancelExport(id); const j = await E.exportQueue.whenExported(id); return j.status;`);
   ok('a background export can be cancelled and leaves no file', r === 'cancelled' && !fs.existsSync(out('queued_cancel.mov')) && !fs.existsSync(out('queued_cancel.es-part.mov')), J(r));
+
+  console.log('D4 source patching');
+  const av = make('av.mp4', ['-f', 'lavfi', '-i', 'color=c=blue:s=160x90:r=30:d=2', '-f', 'lavfi', '-i', 'sine=f=440:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest']);
+  r = await js(`T.fresh(160, 90); const m = await T.imp(${J(av)}); E.store.set({ selectedMedia: m.id, playhead: 0 }); await T.tick(150);
+    const cell = (id) => document.querySelector('.tl-head[data-track="' + id + '"] .srcpatch button');
+    const before = { v1: cell('V1')?.textContent, a1: cell('A1')?.textContent, v2empty: cell('V2')?.classList.contains('empty') };
+    cell('V2').click(); await T.tick(60); cell('A2').click(); await T.tick(60);
+    E.cmds.run('edit.overwrite'); await T.tick(60);
+    const tracks = E.store.getState().sequence.clips.map((c) => c.track).sort();
+    cell('A2').click(); await T.tick(60); const off = cell('A2').classList.contains('on');
+    E.store.set({ playhead: 3 }); E.cmds.run('edit.overwrite'); await T.tick(60);
+    const later = E.store.getState().sequence.clips.filter((c) => c.start >= 2.9).map((c) => c.track);
+    return { before, tracks, off, later, label: E.store.getState().history.at(-1).label };`);
+  ok('the source V1 / A1 indicators sit on the targeted tracks', r.before.v1 === 'V1' && r.before.a1 === 'A1' && r.before.v2empty === true, J(r.before));
+  ok('clicking the empty slots patches V1 -> V2 and A1 -> A2; Overwrite lands there', J(r.tracks) === J(['A2', 'V2']), J(r.tracks));
+  ok('clicking the A1 indicator leaves the sound out of the next edit (picture only)', r.off === false && J(r.later) === J(['V2']), J(r));
+
 });

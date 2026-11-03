@@ -258,6 +258,12 @@ body.remote-mode *, body.remote-mode *::before, body.remote-mode *::after { tran
 .tl-head { position: relative; user-select: none; cursor: grab; }
 .tl-head .tgt { min-width: 26px; padding: 0 3px; font-weight: 600; border: 1px solid #ffffff30; border-radius: 3px; background: transparent; color: var(--dim); }
 .tl-head .tgt.on { background: #2d6fb0; border-color: #6cf; color: #fff; }
+/* source patching column (Source V1 / A1 indicators) */
+.tl-head .srcpatch { display: inline-flex; width: 24px; flex: none; }
+.tl-head .srcpatch .src { min-width: 22px; padding: 0 2px; font-size: 10px; font-weight: 600; border: 1px solid #ffffff30; border-radius: 3px; background: transparent; color: var(--dim); }
+.tl-head .srcpatch .src.on { background: #8a5a1c; border-color: #e3a34a; color: #fff; }
+.tl-head .srcpatch .src.empty { border-style: dashed; border-color: #ffffff18; height: 14px; }
+.tl-head .srcpatch .src.empty:hover { border-color: #e3a34a; }
 .tl-head .tname { flex: 1; min-width: 0; font-size: 10px; color: #ddd; }
 .tl-head.dragging { opacity: .55; }
 .tl-head.drop-target { box-shadow: inset 0 0 0 2px #6cf; background: #2d6fb033; }

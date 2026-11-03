@@ -433,6 +433,25 @@ export function toggleTarget(seq, id) {
   if (!hasTargets(seq, t.kind)) { const cur = targetedTracks(seq, t.kind); for (const x of seq.tracks) if (x.kind === t.kind) x.target = cur.includes(x.id); }
   t.target = !t.target;
 }
+// ---- source patching (the source indicators left of the track targets, Premiere): which timeline track the source's
+// picture (V1) and sound (A1) go to on Insert / Overwrite, and whether each goes at all. Stored per sequence
+// (seq.sourcePatch); without it the source goes to the first targeted track of each kind, as before.
+export const SOURCE_KINDS = { V1: 'video', A1: 'audio' };
+export function sourcePatch(seq) {
+  const p = seq.sourcePatch || {}; const out = {};
+  for (const [src, kind] of Object.entries(SOURCE_KINDS)) {
+    const q = p[src]; const ok = q && seq.tracks.some((t) => t.id === q.track && t.kind === kind);
+    out[src] = ok ? { track: q.track, on: q.on !== false } : { track: targetedTracks(seq, kind)[0] || null, on: q ? q.on !== false : true };
+  }
+  return out;
+}
+/** Patch source V1 / A1 to a timeline track of its kind (it is switched on). */
+export function patchSource(seq, src, trackId) {
+  const t = seq.tracks.find((x) => x.id === trackId); if (!t || t.kind !== SOURCE_KINDS[src]) return false;
+  seq.sourcePatch = { ...sourcePatch(seq), [src]: { track: trackId, on: true } }; return true;
+}
+/** Switch a source indicator off (that part of the source is left out of Insert / Overwrite) or on again. */
+export function toggleSource(seq, src) { if (!SOURCE_KINDS[src]) return; const cur = sourcePatch(seq); seq.sourcePatch = { ...cur, [src]: { ...cur[src], on: !cur[src].on } }; }
 /** Tracks Add Edit cuts: the targeted ones of each kind that uses targeting, every track of the other kinds (all tracks in older projects). */
 export const editTracks = (seq) => seq.tracks.filter((t) => t.kind === 'caption' || !hasTargets(seq, t.kind) || t.target).map((t) => t.id);
 

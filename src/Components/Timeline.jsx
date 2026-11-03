@@ -204,6 +204,18 @@ function TrackMenu({ seq, id, close }) {
 }
 
 // playhead-driven bits subscribe on their own, so playback does not re-render every clip of the timeline 60 times a second
+/** Source patching cell (left of the track target): the source V1 / A1 indicator when it is patched to this track (click:
+ * on / off), else an empty slot to patch it here. Shown while a media item is selected as the Source. */
+function SourceCell({ seq, t, media }) {
+  const src = t.kind === 'video' ? 'V1' : t.kind === 'audio' ? 'A1' : null;
+  const has = !!media && (src === 'V1' ? media.kind === 'video' || media.kind === 'image' : src === 'A1' && (media.kind === 'audio' || (media.kind === 'video' && media.hasAudio !== false)));
+  if (!src) return <span className="srcpatch" />;
+  if (!has) return <span className="srcpatch" />;
+  const p = ed.sourcePatch(seq)[src];
+  return <span className="srcpatch">{p.track === t.id
+    ? <button className={`src ${p.on ? 'on' : ''}`} title={`Source ${src} is patched to ${t.id}: Insert / Overwrite put the source ${src === 'V1' ? 'picture' : 'sound'} here (click: ${p.on ? 'leave it out' : 'include it'})`} onClick={(e) => { e.stopPropagation(); run('track.sourceToggle', src); }}>{src}</button>
+    : <button className="src empty" title={`Patch source ${src} to ${t.id}`} onClick={(e) => { e.stopPropagation(); run('track.sourcePatch', src, t.id); }} />}</span>;
+}
 function PlayheadLine({ pps }) { const t = useStore((s) => s.playhead); return <div className="playhead" style={{ left: t * pps }} />; }
 function Timecode({ fps }) { const t = useStore((s) => s.playhead); return <span className="timecode">{fmt(t, fps)}</span>; }
 
@@ -221,6 +233,7 @@ function trackRows(tracks) {
 
 export default function Timeline() {
   const seq = useStore((s) => s.sequence);
+  const srcMedia = useStore((s) => s.media.find((m) => m.id === s.selectedMedia) || null);
   const selection = useStore((s) => s.selection);
   const tool = useStore((s) => s.tool);
   const toggles = useStore((s) => s.toggles);
@@ -579,6 +592,7 @@ export default function Timeline() {
               ? <div key={'new-' + newKind} className={`tl-newtrack ${newHot === newKind ? 'hot' : ''}`}><button title={`Add ${newKind} track`} onClick={() => run('timeline.addTrack', newKind)}>+ {newKind === 'video' ? 'Video' : 'Audio'} track</button></div>
               : <div key={t.id} data-track={t.id} className={`tl-head ${t.kind} ${trackDrag?.id === t.id ? 'dragging' : ''} ${trackDrag?.over === t.id ? 'drop-target' : ''}`} style={{ height: trackH(t) }}
                 onMouseDown={(e) => headDown(e, t)} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, track: t.id }); }}>
+                <SourceCell seq={seq} t={t} media={srcMedia} />
                 {t.kind !== 'caption'
                   ? <button className={`tgt ${ed.isTargeted(seq, t) ? 'on' : ''}`} title={`Track Targeting (${t.id}): Insert, Overwrite, Paste, Match Frame and Add Edit use the targeted tracks`} onClick={() => run('track.target', t.id)}>{t.id}</button>
                   : <b>{t.id}</b>}

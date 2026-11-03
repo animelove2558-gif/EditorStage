@@ -207,5 +207,22 @@ const matte = (track, keys) => ({ name: 'Track Matte Key', enabled: true, params
   ok('nothing after the clip: nothing moves', ed.rippleOpen(seq0([C('m', 'A1', 0, 10)]), 'A1', 10, 4) === false);
 }
 
+// ---- D4: source patching (Source V1 / A1 -> timeline tracks) ----
+{
+  const s = seq0();
+  let p = ed.sourcePatch(s);
+  ok('without a patch the source goes to the first targeted tracks (V1 / A1, as before)', p.V1.track === 'V1' && p.A1.track === 'A1' && p.V1.on && p.A1.on, J(p));
+  ok('source V1 can be patched to V3, A1 to A2', ed.patchSource(s, 'V1', 'V3') && ed.patchSource(s, 'A1', 'A2') && (p = ed.sourcePatch(s)).V1.track === 'V3' && p.A1.track === 'A2', J(p));
+  ok('...not across kinds', ed.patchSource(s, 'V1', 'A1') === false && ed.sourcePatch(s).V1.track === 'V3');
+  ed.toggleSource(s, 'A1');
+  ok('a source indicator can be switched off (sound left out) and keeps its track', ed.sourcePatch(s).A1.on === false && ed.sourcePatch(s).A1.track === 'A2');
+  ed.patchSource(s, 'A1', 'A3');
+  ok('patching it again switches it on', ed.sourcePatch(s).A1.on === true && ed.sourcePatch(s).A1.track === 'A3');
+  s.tracks = s.tracks.filter((t) => t.id !== 'V3');
+  ok('a patch to a deleted track falls back to the targeted track', ed.sourcePatch(s).V1.track === 'V1');
+  const t2 = seq0(); for (const t of t2.tracks) if (t.kind === 'video') t.target = t.id === 'V2';
+  ok('the default follows track targeting', ed.sourcePatch(t2).V1.track === 'V2');
+}
+
 console.log(`tracks: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

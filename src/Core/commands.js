@@ -186,14 +186,15 @@ function sourceEdit(mode) {
   const s = getState(); const media = s.media.find((m) => m.id === s.selectedMedia);
   if (!media || media.status !== 'ready') return notify('Select a media item in the Project panel (Source) first');
   const [r0, r1] = mediaRange(media); const a = s.sourceIn ?? r0, b = s.sourceOut ?? r1;
-  const seq0 = s.sequence; const vt = ed.targetedTracks(seq0, 'video')[0] || null, at = ed.targetedTracks(seq0, 'audio')[0] || null;
+  // the source patch (V1 / A1 indicators on the track headers) decides where picture and sound go
+  const seq0 = s.sequence; const sp = ed.sourcePatch(seq0); const vt = sp.V1.on ? sp.V1.track : null, at = sp.A1.on ? sp.A1.track : null;
   const hasSound = media.kind === 'audio' || (media.kind === 'video' && media.hasAudio !== false);
   const extra = { dur: Math.max(0.04, b - a), inPoint: a };
   let plan = null;
   if (media.kind === 'audio') plan = at && [at, extra];
   else if (vt) plan = [vt, { ...extra, audioTrack: at }];
   else if (at && hasSound) plan = [at, { ...extra, audioOnly: true }];
-  if (!plan) return notify(`No ${media.kind === 'audio' ? 'audio' : 'video'} track is targeted (click the V1 / A1 buttons on the track headers)`);
+  if (!plan) return notify(`No ${media.kind === 'audio' ? 'audio' : 'video'} track is patched for the source (click the source V1 / A1 indicators left of the track headers)`);
   edit(mode === 'insert' ? 'Insert' : 'Overwrite', ({ seq, sel }) => {
     const tmp = { clips: [], tracks: seq.tracks };
     const ids = placeMedia(tmp, media, s.playhead, plan[0], plan[1]);
@@ -862,6 +863,9 @@ export const commands = {
   'track.sync': (id) => toggleTrack(id, 'sync'),
   'track.voiceOver': toggleVoiceOver,
   'track.target': (id) => edit('Toggle Track Targeting', ({ seq }) => ed.toggleTarget(seq, id)),
+  /** Source patching: move source V1 / A1 to a track (arg: source id, track id) or switch it on / off */
+  'track.sourcePatch': (src, id) => edit(`Patch Source ${src}`, ({ seq }) => ed.patchSource(seq, src, id)),
+  'track.sourceToggle': (src) => edit(`Toggle Source ${src}`, ({ seq }) => ed.toggleSource(seq, src)),
   'track.rename': (id) => openDialog('renameTrack', { id }),
   'track.moveUp': (id) => edit('Move Track Up', ({ seq }) => { ed.moveTrack(seq, id, -1); }),
   'track.moveDown': (id) => edit('Move Track Down', ({ seq }) => { ed.moveTrack(seq, id, 1); }),
