@@ -101,7 +101,7 @@ suite('phase8 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen }
     const got = []; const React = E.react;
     const Box = () => { const [v, setV] = React.useState(100); return React.createElement(E.NumInput, { value: v, onChange: (e) => { got.push(+e.target.value); setV(+e.target.value); }, className: 'p8num' }); };
     root.render(React.createElement(Box)); await T.tick(50);
-    const el = host.querySelector('input'); el.focus(); await T.tick(10);
+    const el = host.querySelector('input'); el.focus(); el.dispatchEvent(new FocusEvent('focusin', { bubbles: true })); await T.tick(10); // the test window may not have OS focus
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; const type = (v) => { setter.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
     type(''); await T.tick(10); type('-'); await T.tick(10); type('-8'); await T.tick(10); type('80'); await T.tick(10);
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await T.tick(10);
