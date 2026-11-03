@@ -1,0 +1,148 @@
+// AudioWorklet processors (loaded once per AudioContext by audioEngine.loadWorklets).
+
+// ---- STFT spectral processor: denoise (spectral subtraction w/ minimum-statistics noise floor) and dereverb (late-reverb subtraction) ----
+function fft(re, im, inverse) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (2 * Math.PI / len) * (inverse ? -1 : 1), wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) { let cr = 1, ci = 0; for (let j = 0; j < len / 2; j++) { const a = i + j, b = i + j + len / 2; const xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr; re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi; const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t; } }
+  }
+  if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+}
+class Spectral extends AudioWorkletProcessor {
+  constructor(opts) {
+    super(); const o = opts.processorOptions || {}; this.mode = o.mode; this.amount = (o.amount ?? 50) / 100; this.N = 1024; this.hop = 256;
+    this.win = new Float32Array(this.N); for (let i = 0; i < this.N; i++) this.win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / this.N);
+    this.ch = []; for (let c = 0; c < 2; c++) this.ch.push({ inb: new Float32Array(this.N), outb: new Float32Array(this.N), wr: 0, noise: new Float32Array(this.N / 2 + 1).fill(1e9), sm: new Float32Array(this.N / 2 + 1), hist: [] });
+    this.re = new Float32Array(this.N); this.im = new Float32Array(this.N);
+  }
+  frame(ch) {
+    const N = this.N, re = this.re, im = this.im, K = N / 2 + 1;
+    for (let i = 0; i < N; i++) { re[i] = ch.inb[(ch.wr - N + i + N * 4) % N] * this.win[i]; im[i] = 0; }
+    fft(re, im, false);
+    const mag = new Float32Array(K); for (let k = 0; k < K; k++) mag[k] = Math.hypot(re[k], im[k]);
+    const gain = new Float32Array(K).fill(1);
+    if (this.mode === 'denoise') {
+      for (let k = 0; k < K; k++) ch.sm[k] = 0.85 * ch.sm[k] + 0.15 * mag[k];
+      const sorted = Float32Array.from(ch.sm).sort(); const med = sorted[K >> 1];
+      for (let k = 0; k < K; k++) { if (ch.sm[k] > 6 * med) { ch.noise[k] = 0; continue; } ch.noise[k] = Math.min(ch.noise[k] * 1.002 + 1e-6, Math.max(ch.sm[k], 1e-6)); }
+      const alpha = 1 + this.amount * 3.5, floor = Math.pow(10, -(8 + 22 * this.amount) / 20);
+      for (let k = 0; k < K; k++) gain[k] = Math.max(floor, 1 - (alpha * ch.noise[k] * 1.6) / (mag[k] + 1e-9));
+    } else { // dereverb: late reverb ~ attenuated magnitude from ~8 frames (~140 ms) earlier
+      ch.hist.push(mag); if (ch.hist.length > 9) ch.hist.shift();
+      const old = ch.hist.length >= 9 ? ch.hist[0] : null; const g = 0.6 + 1.0 * this.amount;
+      for (let k = 0; k < K; k++) { const prevSm = ch.sm[k]; ch.sm[k] = 0.7 * ch.sm[k] + 0.3 * mag[k]; ch.falling = ch.falling || new Uint8Array(K); ch.falling[k] = mag[k] < 0.97 * prevSm ? Math.min(ch.falling[k] + 1, 10) : 0; }
+      if (old) for (let k = 0; k < K; k++) if (ch.falling[k] >= 3) gain[k] = Math.max(0.05, 1 - (g * old[k]) / (mag[k] + 1e-9)); // only energy that is decaying counts as a reverb tail; steady tones are left alone
+    }
+    for (let k = 0; k < K; k++) { re[k] *= gain[k]; im[k] *= gain[k]; if (k > 0 && k < N / 2) { re[N - k] = re[k]; im[N - k] = -im[k]; } }
+    fft(re, im, true);
+    for (let i = 0; i < N; i++) ch.outb[(ch.wr + i) % N] += (re[i] * this.win[i]) / 1.5; // output ring is read at index == wr (latency N)
+  }
+  process(inputs, outputs) {
+    const inp = inputs[0], out = outputs[0]; if (!inp.length) return true;
+    for (let c = 0; c < out.length; c++) {
+      const ch = this.ch[Math.min(c, 1)], x = inp[Math.min(c, inp.length - 1)], y = out[c];
+      for (let i = 0; i < x.length; i++) {
+        const idx = ch.wr % this.N; ch.inb[idx] = x[i]; y[i] = ch.outb[idx]; ch.outb[idx] = 0; ch.wr++;
+        if (ch.wr % this.hop === 0 && ch.wr >= this.N) this.frame(ch);
+      }
+    }
+    return true;
+  }
+}registerProcessor('spectral', Spectral);
+
+// ---- Click remover: detect impulsive outliers in the 2nd difference and bridge them with linear interpolation ----
+class Declick extends AudioWorkletProcessor {
+  constructor(opts) { super(); const o = opts.processorOptions || {}; this.th = 3 + (100 - (o.thresh ?? 30)) * 0.12; this.L = 64; this.b = [new Float32Array(this.L), new Float32Array(this.L)]; this.rms = [1e-3, 1e-3]; this.w = 0; }
+  process(inputs, outputs) {
+    const inp = inputs[0], out = outputs[0]; if (!inp.length) return true; const L = this.L;
+    for (let i = 0; i < out[0].length; i++) {
+      for (let c = 0; c < out.length; c++) {
+        const x = inp[Math.min(c, inp.length - 1)][i], b = this.b[Math.min(c, 1)];
+        b[this.w % L] = x; const n = this.w, idx = (k) => ((n - k) % L + L) % L, g = (k) => b[idx(k)];
+        // deviation of the previous sample from the interpolation of its neighbours (second-difference-like residual)
+        const r1 = g(1) - (g(0) + g(2)) / 2; this.rms[c] = 0.9995 * this.rms[c] + 0.0005 * Math.abs(r1);
+        const thr = this.th * Math.max(this.rms[c], 2e-4);
+        if (n > 8) {
+          let fixed = false;
+          for (let m = 1; m <= 3 && !fixed; m++) { // a burst of m samples between g(0) and g(m+1)
+            const a0 = g(0), z = g(m + 1); let mx = 0;
+            for (let k = 1; k <= m; k++) mx = Math.max(mx, Math.abs(g(k) - (z + ((a0 - z) * (m + 1 - k)) / (m + 1)) * 0 - (a0 + ((z - a0) * k) / (m + 1))));
+            if (mx > thr * (m === 1 ? 1 : 1.5) && Math.abs(g(m + 1) - g(m + 2)) < thr * 4) { for (let k = 1; k <= m; k++) b[idx(k)] = a0 + ((z - a0) * k) / (m + 1); fixed = true; }
+          }
+        }
+        out[c][i] = g(Math.min(L - 1, 48));
+      }
+      this.w++;
+    }
+    return true;
+  }
+}registerProcessor('declick', Declick);
+
+// ---- Phase-vocoder pitch shifter (Pitch Shifter / Pitch and Time): STFT with 4x overlap, true-frequency estimates,
+// peak-locked bin shifting (Laroche & Dolson), optional formant preservation (cepstral spectral envelope kept in place). Latency = N samples. ----
+class PVPitch extends AudioWorkletProcessor {
+  static get parameterDescriptors() { return [{ name: 'ratio', defaultValue: 1, minValue: 0.25, maxValue: 4, automationRate: 'k-rate' }]; }
+  constructor(opts) {
+    super(); const o = opts.processorOptions || {}; const N = this.N = o.N || 2048; this.hop = N / 4; this.formant = !!o.formant; const K = N / 2 + 1;
+    this.win = new Float32Array(N); for (let i = 0; i < N; i++) this.win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N);
+    this.ch = []; for (let c = 0; c < 2; c++) this.ch.push({ inb: new Float32Array(N), outb: new Float32Array(N), wr: 0, last: new Float32Array(K), sum: new Float32Array(K) });
+    this.re = new Float32Array(N); this.im = new Float32Array(N); this.mag = new Float32Array(K); this.frq = new Float32Array(K); this.smag = new Float32Array(K); this.sph = new Float32Array(K); this.done = new Uint8Array(K); this.ph = new Float32Array(K);
+    this.cr = new Float32Array(N); this.ci = new Float32Array(N); this.env = new Float32Array(K);
+  }
+  envelope(mag) { // cepstral smoothing of the log magnitude -> spectral envelope (formants)
+    const N = this.N, K = N / 2 + 1, re = this.cr, im = this.ci, L = Math.max(8, N / 64);
+    for (let k = 0; k < K; k++) { re[k] = Math.log(mag[k] + 1e-9); im[k] = 0; if (k > 0 && k < N / 2) { re[N - k] = re[k]; im[N - k] = 0; } }
+    fft(re, im, true); for (let n = L; n <= N - L; n++) { re[n] = 0; im[n] = 0; } fft(re, im, false);
+    for (let k = 0; k < K; k++) this.env[k] = Math.exp(re[k]);
+    return this.env;
+  }
+  frame(ch, ratio) {
+    const N = this.N, K = N / 2 + 1, re = this.re, im = this.im, hop = this.hop, exp = (2 * Math.PI * hop) / N, mag = this.mag, frq = this.frq, ph = this.ph;
+    for (let i = 0; i < N; i++) { re[i] = ch.inb[(ch.wr - N + i + N * 4) % N] * this.win[i]; im[i] = 0; }
+    fft(re, im, false); // e^{+i} forward transform (see fft above): phases are read conjugated
+    let mx = 0;
+    for (let k = 0; k < K; k++) {
+      const m = Math.hypot(re[k], im[k]), a = Math.atan2(-im[k], re[k]); let d = a - ch.last[k]; ch.last[k] = a;
+      d -= k * exp; d -= 2 * Math.PI * Math.round(d / (2 * Math.PI)); mag[k] = m; ph[k] = a; frq[k] = k + d / exp; if (m > mx) mx = m;
+    }
+    // Laroche-Dolson peak-locked shifting: each spectral peak moves with the bins around it (its region) as one block,
+    // so partials keep their shape and level; phases inside a region stay locked to the peak's.
+    const smag = this.smag.fill(0), sph = this.sph, done = this.done.fill(0); const peaks = [];
+    for (let k = 1; k < K - 1; k++) if (mag[k] > mx * 1e-5 && mag[k] > mag[k - 1] && mag[k] >= mag[k + 1]) peaks.push(k);
+    for (let i = 0; i < peaks.length; i++) {
+      const p = peaks[i]; let lo = 0, hi = K - 1;
+      if (i > 0) { lo = peaks[i - 1] + 1; for (let k = lo; k < p; k++) if (mag[k] < mag[lo]) lo = k; }
+      if (i < peaks.length - 1) { hi = p; for (let k = p; k < peaks[i + 1]; k++) if (mag[k] < mag[hi]) hi = k; hi--; }
+      const wOut = frq[p] * ratio, s = Math.round(wOut) - p, jp = p + s; if (jp < 0 || jp >= K) continue;
+      const psi = ch.sum[jp] + wOut * exp;
+      for (let k = lo; k <= hi; k++) { const j = k + s; if (j < 0 || j >= K || mag[k] <= smag[j]) continue; smag[j] = mag[k]; sph[j] = psi + ph[k] - ph[p]; done[j] = 1; }
+    }
+    for (let j = 0; j < K; j++) if (done[j]) ch.sum[j] = sph[j] - 2 * Math.PI * Math.round(sph[j] / (2 * Math.PI));
+    if (this.formant && Math.abs(ratio - 1) > 1e-3) {
+      const env = Float32Array.from(this.envelope(mag));
+      for (let j = 0; j < K; j++) { const src = j / ratio; const a = Math.min(K - 1, Math.floor(src)), f = Math.min(1, src - a); const es = src >= K - 1 ? env[K - 1] : env[a] * (1 - f) + env[a + 1] * f; smag[j] *= env[j] / Math.max(es, 1e-9); }
+    }
+    for (let k = 0; k < K; k++) {
+      const m = smag[k], a = done[k] ? sph[k] : 0;
+      re[k] = m * Math.cos(a); im[k] = -m * Math.sin(a); // back to this FFT's sign convention
+      if (k > 0 && k < N / 2) { re[N - k] = re[k]; im[N - k] = -im[k]; }
+    }
+    im[0] = 0; im[N / 2] = 0;
+    fft(re, im, true);
+    for (let i = 0; i < N; i++) ch.outb[(ch.wr + i) % N] += (re[i] * this.win[i]) / 1.5;
+  }
+  process(inputs, outputs, params) {
+    const inp = inputs[0], out = outputs[0]; if (!inp.length) return true; const ratio = params.ratio[0];
+    for (let c = 0; c < out.length; c++) {
+      const ch = this.ch[Math.min(c, 1)], x = inp[Math.min(c, inp.length - 1)], y = out[c];
+      for (let i = 0; i < x.length; i++) {
+        const idx = ch.wr % this.N; ch.inb[idx] = x[i]; y[i] = ch.outb[idx]; ch.outb[idx] = 0; ch.wr++;
+        if (ch.wr % this.hop === 0 && ch.wr >= this.N) this.frame(ch, ratio);
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pv-pitch', PVPitch);

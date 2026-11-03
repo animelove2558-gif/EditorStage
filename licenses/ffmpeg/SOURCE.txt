@@ -1,0 +1,20 @@
+FFmpeg in EditorStage
+=====================
+
+EditorStage ships an unmodified FFmpeg executable (resources/app.asar.unpacked/node_modules/ffmpeg-static/).
+Version: 6.1.1-essentials_build-www.gyan.dev
+License: GNU General Public License version 3 (see the .LICENSE file in this folder). The build configuration
+is listed in the .README file in this folder.
+
+EditorStage runs FFmpeg as a separate program (command-line arguments and pipes). EditorStage itself is not a
+derivative of FFmpeg and is not covered by the GPL. FFmpeg remains under the GPL and you may use, study,
+change and share it under that license.
+
+Corresponding source code
+- Included with this installation: resources/source-code/ffmpeg-6.1.1.tar.xz (in the EditorStage install folder)
+- FFmpeg source of this exact build: https://github.com/FFmpeg/FFmpeg/commit/e38092ef93
+- The external libraries compiled into it (x264, x265, libvpx, libaom, opus, lame and the others in the
+  configuration) come from their upstream projects, at the versions listed in the .README file.
+- The same source is also available from BYS & RB, who distribute this copy of EditorStage. Ask them for it.
+
+You may replace this FFmpeg with another build: Preferences > FFmpeg > Choose FFmpeg...

@@ -1,0 +1,14 @@
+libvips in EditorStage
+======================
+
+The sharp image library (an indirect dependency of @huggingface/transformers) ships prebuilt, unmodified
+libvips 8.17.3 DLLs (node_modules/@img/sharp-win32-x64/lib).
+libvips is licensed under the GNU Lesser General Public License version 3 or later (see
+packages/@img__sharp-win32-x64@0.34.5.txt). The libraries built into it and their versions
+are in versions.json in this folder.
+
+The DLLs are separate files loaded at run time: you may replace them with your own build of the same version.
+Included with this installation: resources/source-code/vips-8.17.3.tar.xz (in the EditorStage install folder).
+Source: https://github.com/libvips/libvips (tag v8.17.3) and the build scripts at
+https://github.com/lovell/sharp-libvips. The same source is also available from whoever gave you this copy of
+EditorStage (BYS & RB). Ask them for it.

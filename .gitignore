@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+
+test-assets/
+
+# Large binaries (models are fetched/copied separately; GPL source archives are kept outside git)
+assets/models/
+third_party_source/*.tar.xz
+*.log

@@ -1,0 +1,69 @@
+import * as tracking from './Services/tracking';
+import * as transcript from './Services/ai/transcript';
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './Components/App';
+import * as store from './Core/store';
+import * as prefs from './Core/prefs';
+import * as compositor from './Renderers/Compositor';
+import * as moreTransitions from './Renderers/fx/moreTransitions';
+import * as moreVideoFx from './Renderers/fx/moreVideoFx';
+import * as presets from './Core/presets';
+import * as fxPreview from './Services/fxPreview';
+import * as catalog from './Core/effectsCatalog';
+import * as shortcuts from './Core/shortcuts';
+import * as markers from './Core/markers';
+import * as attributes from './Core/attributes';
+import * as media from './Services/media';
+import * as cmds from './Core/commands';
+
+import { VIDEO_FX } from './Renderers/fx/videoEffects';
+import { AUDIO_FX, readLoudness, crossfadeGains } from './Services/audioFx';
+import { VIDEO_TRANSITION_IDS } from './Renderers/fx/transitions';
+import * as params from './Core/params';
+import * as dnd from './Core/dnd';
+import * as audio from './Services/audioEngine';
+import * as editing from './Core/editing';
+import * as menus from './Core/menus';
+import * as exporter from './Services/exporter';
+import * as exportQueue from './Services/exportQueue';
+import * as ducking from './Services/ducking';
+import * as mediaLink from './Services/mediaLink';
+import * as shorts from './Services/ai/shorts';
+import * as broll from './Services/ai/broll';
+import * as health from './Services/healthCheck';
+import * as filters from './Services/filters';
+import * as segment from './Services/segment';
+import * as hoverPreview from './Services/hoverPreview';
+import * as gfx from './Services/graphics';
+import * as flat from './Core/flatten';
+import * as stab from './Services/stabilize';
+import * as vision from './Services/vision';
+import * as morph from './Services/morph';
+import { validPreviewAt } from './Core/previewState';
+import * as mogrt from './Components/MogrtPanel';
+import * as mogrtLibrary from './Services/mogrt/library';
+import * as mogrtRender from './Services/mogrt/render';
+
+import * as silence from './Services/ai/silence';
+import * as stt from './Services/ai/stt';
+import * as diarize from './Services/ai/diarize';
+import * as reframe from './Services/ai/reframe';
+import * as captions from './Services/ai/captions';
+import * as audiostage from './Services/audiostage';
+import * as archive from './Services/archive';
+import * as versions from './Services/versions';
+import * as layout from './Core/layout';
+import * as interchange from './Services/interchange';
+import * as fonts from './Services/fonts';
+import * as proxy from './Services/proxy';
+import * as compare from './Core/compare';
+import * as trim from './Core/trimMode';
+import * as remix from './Services/remix';
+import * as remixClip from './Services/remixClip';
+import * as retimed from './Services/retimedAudio';
+
+window.__es = { prefs, compositor, moreTransitions, moreVideoFx, presets, fxPreview, catalog, shortcuts, markers, attributes, menus, shorts, broll, mediaLink, health, filters, segment, hoverPreview, ducking, exportQueue, tracking, transcript, readLoudness, crossfadeGains, store, media, cmds, VIDEO_FX, AUDIO_FX, VIDEO_TRANSITION_IDS, params, dnd, audio, editing, exporter, gfx, flatten: flat, stab, vision, morph, validPreviewAt, mogrt, mogrtLibrary, mogrtRender,
+  silence, stt, diarize, reframe, captions, audiostage, archive, versions, layout, interchange, fonts, proxy, compare, trim, remix, remixClip, retimed }; // debug/automation handle
+
+createRoot(document.getElementById('root')).render(<App />);

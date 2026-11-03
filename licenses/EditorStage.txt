@@ -1,0 +1,6 @@
+EditorStage 3.0.0
+All rights reserved by BYS & RB
+Copyright (c) BYS & RB. All rights reserved.
+
+The third-party components in this program keep their own licenses: see THIRD_PARTY_LICENSES.md and the
+packages/, ffmpeg/ and libvips/ folders here.
