@@ -3,7 +3,8 @@ import NumInput from './NumInput';
 import { getPrefs, setPrefs } from '../Core/prefs';
 import { useStore, set, edit, getState } from '../Core/store';
 import { detectSilence, cutRanges } from '../Services/ai/silence';
-import { autoSubtitles, MODELS, LANGUAGES, captionsToSrt, captionsToVtt, captionsToAss } from '../Services/ai/stt';
+import { autoSubtitles, MODELS, modelInfo, LANGUAGES, captionsToSrt, captionsToVtt, captionsToAss } from '../Services/ai/stt';
+import ModelPack from './ModelPack';
 import { words as segWords } from '../Services/textEngine';
 import { CAPTION_STYLES, CAPTION_PRESETS, defaultCaptionStyle, markKeywords } from '../Services/ai/captions';
 import { diarize, splitBySpeaker } from '../Services/ai/diarize';
@@ -70,7 +71,7 @@ function SubtitlesTab() {
       {ui}
       <Row label="Language"><select value={o.language} onChange={(e) => setO({ ...o, language: e.target.value })}>{LANGUAGES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Row>
       <Row label="Output"><select value={o.task} onChange={(e) => setO({ ...o, task: e.target.value })}><option value="transcribe">Same language as spoken</option><option value="translate">Translate to English</option></select></Row>
-      <Row label="Model"><select value={o.model} onChange={(e) => setO({ ...o, model: e.target.value })}>{MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></Row>
+      <Row label="Model"><select value={o.model} onChange={(e) => setO({ ...o, model: e.target.value })}>{MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select> <ModelPack id={modelInfo(o.model).pack} /></Row>
       <Row label="Line length"><NumInput type="number" min="10" max="90" value={o.maxChars} onChange={(e) => setO({ ...o, maxChars: +e.target.value })} /> chars × <select value={o.lines} onChange={(e) => setO({ ...o, lines: +e.target.value })}><option value={1}>1 line</option><option value={2}>2 lines</option><option value={3}>3 lines</option></select>, max <NumInput type="number" min="1" max="10" step="0.5" value={o.maxDur} onChange={(e) => setO({ ...o, maxDur: +e.target.value })} /> s</Row>
       <StyleEditor style={style} onChange={setStyle} />
       <div className="st-actions"><button className="primary" disabled={!!p} onClick={go}>Generate Subtitles</button></div>

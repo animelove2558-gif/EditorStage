@@ -200,4 +200,38 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   ok('"the board members sat around the conference table" suggests office_meeting.png', top(5)?.[0] === 'office_meeting.png', J(r.sug));
   ok('"climbing up to the summit" suggests mountain_hiking.png', top(10)?.[0] === 'mountain_hiking.png', J(r.sug));
   ok('unrelated files are not suggested for a sentence', r.sug.every((g) => g.c.length <= 2), J(r.sug));
+
+  console.log('D15 Whisper Small / Medium model packs');
+  // English speech from the Windows speech synthesizer (no Thai voice is installed on a stock Windows)
+  const speech = out('speech_en.wav');
+  spawnSync('powershell', ['-NoProfile', '-Command', `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SelectVoice('Microsoft Zira Desktop'); $s.Rate = -1; $s.SetOutputToWaveFile('${speech}'); $s.Speak('The quick brown fox jumps over the lazy dog. Please call me tomorrow morning.'); $s.Dispose()`]);
+  r = await js(`return E.stt.MODELS.map((m) => [m.id, m.pack || null, !!m.dtype]);`);
+  ok('model list: Base (bundled), Small and Medium (download packs, 8-bit)', J(r) === J([['whisper/whisper-base', null, false], ['whisper/whisper-small', 'whisper-small', true], ['whisper/whisper-medium', 'whisper-medium', true]]), J(r));
+  r = await js(`let err = null; try { await E.stt.transcribe(new Float32Array(16000), { model: 'whisper/whisper-medium' }); } catch (e) { err = String(e.message || e); } return err;`);
+  ok('transcribing with a pack that is not downloaded says so (no crash, no network)', /not downloaded yet/.test(r || ''), J(r));
+  r = await js(`await E.cmds.run('ai.subtitles'); await T.tick(300); const sel = [...document.querySelectorAll('select')].find((s) => [...s.options].some((o) => o.value === 'whisper/whisper-small'));
+    if (!sel) return { sel: false }; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, 'whisper/whisper-small'); sel.dispatchEvent(new Event('change', { bubbles: true })); await T.tick(300);
+    return { sel: true, btn: [...document.querySelectorAll('.modelpack button')].map((b) => b.textContent) };`);
+  ok('choosing Whisper Small shows its Download model button', r.sel && r.btn.some((t) => /^Download model \(2\d\d MB\)$/.test(t)), J(r));
+  const t15 = Date.now();
+  r = await js(`let err = null; try { await E.modelPacks.downloadPack('whisper-small'); } catch (e) { err = String(e.message || e); } return { err, info: E.modelPacks.packInfo('whisper-small') };`);
+  ok('Download installs Whisper Small (pinned revision, checked hashes)', r.err === null && r.info.installed && fs.existsSync(path.join(tmp, 'userData', 'models', 'whisper', 'whisper-small', 'onnx', 'encoder_model_quantized.onnx')), J(r));
+  console.log(`  download took ${((Date.now() - t15) / 1000).toFixed(0)} s`);
+  if (fs.existsSync(speech)) {
+    const t1 = Date.now();
+    r = await js(`const buf = await (await fetch('es-media://local/' + encodeURIComponent(${J(speech.replace(/\\/g, '/'))}))).arrayBuffer();
+      const ctx = new OfflineAudioContext(1, 16000, 16000); const ab = await ctx.decodeAudioData(buf); const pcm = new Float32Array(ab.getChannelData(0));
+      const res = await E.stt.transcribe(pcm, { model: 'whisper/whisper-small', language: 'english' }); return { text: res.words.map((w) => w.text).join(''), n: res.words.length, t: res.words.map((w) => [w.t0, w.t1]) };`);
+    const low = String(r.text).toLowerCase();
+    ok('Whisper Small transcribes speech with word times', ['quick', 'brown', 'fox', 'lazy', 'dog', 'tomorrow'].every((w) => low.includes(w)) && r.t.every(([a, b]) => b > a), J(r));
+    console.log(`  Whisper Small: "${r.text.trim()}" in ${((Date.now() - t1) / 1000).toFixed(0)} s`);
+    if (process.env.ES_E2E_MEDIUM) {
+      r = await js(`let err = null; try { await E.modelPacks.downloadPack('whisper-medium'); } catch (e) { err = String(e.message || e); } return err;`);
+      ok('Download installs Whisper Medium', r === null, J(r));
+      r = await js(`const buf = await (await fetch('es-media://local/' + encodeURIComponent(${J(speech.replace(/\\/g, '/'))}))).arrayBuffer();
+        const ctx = new OfflineAudioContext(1, 16000, 16000); const ab = await ctx.decodeAudioData(buf); const pcm = new Float32Array(ab.getChannelData(0));
+        const res = await E.stt.transcribe(pcm, { model: 'whisper/whisper-medium', language: 'english' }); return res.words.map((w) => w.text).join('');`);
+      ok('Whisper Medium transcribes speech', ['quick', 'fox', 'dog'].every((w) => String(r).toLowerCase().includes(w)), J(r));
+    }
+  } else ok('speech sample made by the Windows speech synthesizer', false, 'System.Speech did not write the file');
 });

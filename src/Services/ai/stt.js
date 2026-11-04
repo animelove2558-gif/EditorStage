@@ -3,11 +3,16 @@ import { edit, getState } from '../../Core/store';
 import { sequencePCM, timelineSpan } from './audioSource';
 import { defaultCaptionStyle, markKeywords } from './captions';
 import { breakLines } from '../textEngine';
+import { isInstalled } from './modelPacks';
 
+// Base is bundled. Small / Medium are optional packs (much better Thai) the user downloads once (electron/models.js);
+// they use the 8-bit (q8) encoder and decoder so they fit in memory and run at a usable speed on the CPU.
 export const MODELS = [
-  { id: 'whisper/whisper-base', label: 'Whisper Base (bundled, ~140 MB, 99 languages)' },
-  { id: 'whisper/whisper-small', label: 'Whisper Small (more accurate, add with scripts/fetch_models.mjs small)' },
+  { id: 'whisper/whisper-base', label: 'Whisper Base (bundled, fast, 99 languages)' },
+  { id: 'whisper/whisper-small', pack: 'whisper-small', dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' }, label: 'Whisper Small (download ~250 MB, better Thai)' },
+  { id: 'whisper/whisper-medium', pack: 'whisper-medium', dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' }, label: 'Whisper Medium (download ~990 MB, best Thai, slow)' },
 ];
+export const modelInfo = (id) => MODELS.find((m) => m.id === id) || MODELS[0];
 // Whisper language names (transformers.js accepts these or ISO codes); '' = auto-detect
 export const LANGUAGES = [['', 'Auto-detect'], ['thai', 'ไทย (Thai)'], ['english', 'English'], ['japanese', '日本語'], ['chinese', '中文'], ['korean', '한국어'], ['vietnamese', 'Tiếng Việt'],
   ['indonesian', 'Bahasa Indonesia'], ['malay', 'Bahasa Melayu'], ['lao', 'ລາວ'], ['khmer', 'ខ្មែរ'], ['burmese', 'မြန်မာ'], ['hindi', 'हिन्दी'], ['arabic', 'العربية'], ['french', 'Français'],
@@ -25,7 +30,9 @@ function getWorker() {
 /** Stop a running transcription (the worker is restarted). */
 export function cancelTranscription() { if (!worker) return; worker.terminate(); worker = null; for (const w of [...waiting.values()]) w({ type: 'error', error: 'Cancelled' }); waiting.clear(); }
 /** Transcribe audio (mono Float32 @16 kHz). onProgress({stage, progress}). Resolves {words:[{text,t0,t1}], language}. */
-export function transcribe(audio, { model = MODELS[0].id, language = '', task = 'transcribe' } = {}, onProgress = () => {}) {
+export async function transcribe(audio, { model = MODELS[0].id, language = '', task = 'transcribe' } = {}, onProgress = () => {}) {
+  const info = modelInfo(model);
+  if (info.pack && !(await isInstalled(info.pack).catch(() => false))) throw new Error(`${info.label.split(' (')[0]} is not downloaded yet: press Download model next to the model list`);
   const id = ++seqId; const w = getWorker();
   return new Promise((resolve, reject) => {
     waiting.set(id, (m) => {
@@ -35,7 +42,7 @@ export function transcribe(audio, { model = MODELS[0].id, language = '', task = 
       else if (m.type === 'done') { waiting.delete(id); resolve(m); }
       else if (m.type === 'error') { waiting.delete(id); reject(new Error(m.error)); }
     });
-    w.postMessage({ id, audio, sr: 16000, model, language: language || null, task }, [audio.buffer]);
+    w.postMessage({ id, audio, sr: 16000, model: info.id, dtype: info.dtype || null, language: language || null, task }, [audio.buffer]);
   });
 }
 

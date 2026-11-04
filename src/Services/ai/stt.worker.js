@@ -1,20 +1,23 @@
 // Speech-to-text worker: Whisper (multilingual, word timestamps) via transformers.js + ONNX Runtime (WASM), fully offline.
-// Model files: dist/models/whisper/<model>/ ; runtime: dist/ort/ (both copied by scripts/build.mjs).
+// Model files: dist/models/whisper/<model>/ (Base, bundled) or a downloaded pack in userData/models (Small / Medium), both
+// served at es-app://app/models/ ; runtime: dist/ort/ (copied by scripts/build.mjs).
 import { pipeline, env } from '@huggingface/transformers';
 
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
-env.localModelPath = new URL('models/', self.location.href).href;
+// es-app://app/models/ serves the bundled models (dist/models) and downloaded packs (userData/models, electron/models.js)
+env.localModelPath = 'es-app://app/models/';
 env.useBrowserCache = false;
 env.backends.onnx.wasm.wasmPaths = new URL('ort/', self.location.href).href;
 env.backends.onnx.wasm.numThreads = 1; // no cross-origin isolation -> no SharedArrayBuffer threads
 env.backends.onnx.wasm.proxy = false;
 
 let asr = null, asrModel = null;
-async function load(model) {
+async function load(model, dtype) {
   if (asr && asrModel === model) return asr;
+  if (asr) { await asr.dispose?.(); asr = null; asrModel = null; } // one model in memory at a time (Medium is ~1 GB)
   asr = await pipeline('automatic-speech-recognition', model, {
-    dtype: { encoder_model: 'fp32', decoder_model_merged: 'q8' }, device: 'wasm',
+    dtype: dtype || { encoder_model: 'fp32', decoder_model_merged: 'q8' }, device: 'wasm',
     progress_callback: (p) => { if (p.status === 'progress') self.postMessage({ type: 'loading', file: p.file, progress: p.progress }); },
   });
   asrModel = model; return asr;
@@ -36,9 +39,9 @@ function blocks(audio, sr, target = 28) {
 }
 
 self.onmessage = async (e) => {
-  const { id, audio, sr = 16000, model = 'whisper/whisper-base', language = null, task = 'transcribe' } = e.data;
+  const { id, audio, sr = 16000, model = 'whisper/whisper-base', dtype = null, language = null, task = 'transcribe' } = e.data;
   try {
-    const p = await load(model);
+    const p = await load(model, dtype);
     self.postMessage({ type: 'ready', id });
     const words = []; const bs = blocks(audio, sr); let done = 0; let detected = null;
     for (const [a, b] of bs) {

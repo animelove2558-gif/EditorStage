@@ -1,5 +1,6 @@
 // Developer helper: download the offline speech-to-text model into assets/models (bundled into the app by scripts/build.mjs).
-// Usage: node scripts/fetch_models.mjs [base|small]   (default: base). The running app never downloads anything.
+// Usage: node scripts/fetch_models.mjs [base]   (default: base). Whisper Small / Medium are not bundled: the app downloads
+// them only when the user presses Download model (electron/models.js, pinned revision, checked hashes).
 import fs from 'node:fs';
 import path from 'node:path';
 

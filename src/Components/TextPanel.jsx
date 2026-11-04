@@ -4,7 +4,8 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import NumInput from './NumInput';
 import { useStore, set } from '../Core/store';
 import { shortcutKey } from '../Core/keys';
-import { MODELS, LANGUAGES, segmentWords, placeCaptions } from '../Services/ai/stt';
+import { MODELS, modelInfo, LANGUAGES, segmentWords, placeCaptions } from '../Services/ai/stt';
+import ModelPack from './ModelPack';
 import { detectSilence, cutRanges } from '../Services/ai/silence';
 import { sequenceWords, sequenceSources, transcribeSequence, cancelTranscribe, deleteWords, moveWords, findFillers, removeFillers, searchWords, fillerList, setFillerList, wordsRange } from '../Services/ai/transcript';
 
@@ -54,6 +55,7 @@ export default function TextPanel() {
     <div className="panel-pad textpanel" tabIndex={0} onKeyDown={onKey}>
       <div className="param">
         <select value={model} onChange={(e) => setModel(e.target.value)} title="Speech model">{MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
+        <ModelPack id={modelInfo(model).pack} />
         <select value={lang} onChange={(e) => setLang(e.target.value)} title="Language">{LANGUAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         <button disabled={!!prog || !sources.length} onClick={() => go(false)} title="Transcribe the audio of the sequence (offline Whisper)">{missing.length || !words.length ? 'Transcribe' : 'Transcribed ✓'}</button>
         {!missing.length && sources.length > 0 && <button disabled={!!prog} onClick={() => go(true)} title="Transcribe again (e.g. with another model or language)">Re-transcribe</button>}
