@@ -206,9 +206,9 @@ suite('phase5 e2e', async ({ js, ok, A, out, frames, px, near, nextSave, nextOpe
   th = await js(`E.cmds.run('view.thumbs.none'); await T.tick(80); const n = document.querySelectorAll('.clip .thumbs img').length; E.cmds.run('view.thumbs.head'); await T.tick(50);
     const pref = localStorage.getItem('es-thumbs');
     E.store.set({ selection: [VI] }); E.cmds.seqFromSelection(true); await T.tick(100); const nest = E.store.getState().sequence.clips.find((c) => c.nestId);
-    const icon = document.querySelector('.clip[data-clip="' + nest.id + '"] .thumb-icon')?.textContent; return { n, pref, icon };`);
+    const el = document.querySelector('.clip[data-clip="' + nest.id + '"]'); const icon = el?.querySelector('.thumb-icon')?.textContent; const rendered = !!el?.querySelector('.thumbs.rendered'); return { n, pref, icon, rendered };`);
   ok('None hides the thumbnails; the choice is remembered (viewer preference)', th.n === 0 && th.pref === 'head', J(th));
-  ok('a nested sequence clip shows an icon instead of frames', th.icon === '🎬', J(th));
+  ok('a nested sequence clip uses rendered thumbnails (icon until the first frame is drawn; see phase9 D14)', th.rendered && (th.icon === '🎬' || th.icon === undefined), J(th));
 
   // ---------------- Opacity rubber band ----------------
   console.log('Opacity / Volume rubber bands');
