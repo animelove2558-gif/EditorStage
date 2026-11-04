@@ -161,4 +161,43 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   r = await js(`const clip = E.store.getState().sequence.clips[0]; T.patch(clip.id, (c) => { c.effects[0].params.subject = { v: 2, keys: null }; });
     let err = null; try { await E.exporter.renderFrame(0.5, 320, 180); } catch (e) { err = String(e); } return { err, variant: E.segment.removeBgOptions(T.clip(clip.id)).variant, has: !!E.segment.getMask(E.segment.maskKey(clip.mediaId, 0, 's2')) };`);
   ok('the Vehicles / Animals / Any Object subjects run the DeepLab model (own cached mask per subject)', r.err === null && r.variant === 's2' && r.has === true, J(r));
+
+  console.log('D9 Smart B-Roll by meaning (multilingual sentence model pack)');
+  const talk9 = make('talk9.mp4', ['-f', 'lavfi', '-i', 'color=c=gray:s=160x90:r=10:d=14', '-f', 'lavfi', '-i', 'sine=f=300:d=14', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest']);
+  const pics9 = [['beach_sunset.png', 'orange'], ['office_meeting.png', 'white'], ['mountain_hiking.png', 'green']].map(([n, c]) => make(n, ['-f', 'lavfi', '-i', `color=c=${c}:s=160x90:d=1`, '-frames:v', '1']));
+  const words9 = [['ทะเล', 1, 1.3], ['สวย', 1.3, 1.6], ['มาก', 1.6, 1.9], ['คลื่น', 2, 2.3], ['ซัด', 2.3, 2.6], ['เข้า', 2.6, 2.8], ['หาด', 2.8, 3.1], ['ทราย', 3.1, 3.5],
+    [' The', 5, 5.3], [' board', 5.3, 5.8], [' members', 5.8, 6.2], [' sat', 6.2, 6.5], [' around', 6.5, 7], [' the', 7, 7.2], [' conference', 7.2, 7.6], [' table.', 7.6, 8],
+    [' Climbing', 10, 10.5], [' up', 10.5, 10.7], [' to', 10.7, 10.9], [' the', 10.9, 11], [' summit', 11, 11.5], [' was', 11.5, 11.7], [' exhausting.', 11.7, 12.5]].map(([text, t0, t1]) => ({ text, t0, t1 }));
+  r = await js(`T.fresh(160, 90); const m = await T.imp(${J(talk9)}); T.place(m, 0, 'V1');
+    E.store.edit('Transcribe', ({ media }) => { media.find((x) => x.id === m.id).transcript = { words: ${J(words9)}, language: 'th' }; });
+    for (const p of ${J(pics9)}) await T.imp(p);
+    const list = await E.modelPacks.listPacks(true); const n = await E.broll.indexMedia({ vision: false });
+    const words = E.broll.suggestBRoll().map((g) => g.candidates.map((c) => c.name));
+    const miss = await fetch('es-app://app/models/embed/paraphrase-multilingual-MiniLM-L12-v2/config.json').then((x) => x.status, () => 'error');
+    return { packs: list.map((p) => [p.id, p.installed, p.bytes]), n, words, miss, vec: E.store.getState().media.some((x) => x.brollIndex?.vec) };`);
+  ok('model packs are listed, none installed in a fresh profile; without the model nothing matches these sentences by words', r.packs.length === 3 && r.packs.every((p) => p[1] === false) && r.n === 4 && r.words.length === 0 && !r.vec, J(r));
+  ok('a model file that is not installed is a 404 on es-app://app/models/', r.miss === 404, J(r.miss));
+  r = await js(`await E.cmds.run('ai.broll'); await T.tick(300); const b = [...document.querySelectorAll('.broll .modelpack button')].map((x) => x.textContent); return b;`);
+  ok('B-Roll tab offers "Download model (... MB)"', r.some((t) => /^Download model \(\d+ MB\)$/.test(t)), J(r));
+  const t0 = Date.now();
+  r = await js(`const seen = []; const off = E.modelPacks.subscribe((l) => { const p = l.find((x) => x.id === 'multilingual-embed'); if (p && p.got) seen.push(p.got); });
+    let err = null; try { await E.modelPacks.downloadPack('multilingual-embed'); } catch (e) { err = String(e.message || e); } off();
+    return { err, steps: seen.length, last: seen.at(-1), info: E.modelPacks.packInfo('multilingual-embed') };`);
+  const embDir = path.join(tmp, 'userData', 'models', 'embed', 'paraphrase-multilingual-MiniLM-L12-v2');
+  ok('Download fetches the pack into userData/models with progress (checked sizes + hashes)', r.err === null && r.info.installed && r.steps > 5 && r.last === r.info.bytes && fs.existsSync(path.join(embDir, 'onnx', 'model_quantized.onnx')), J({ ...r, secs: (Date.now() - t0) / 1000 }));
+  console.log(`  download took ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  r = await js(`await T.tick(200); return [...document.querySelectorAll('.broll .modelpack')].map((x) => x.textContent);`);
+  ok('...the tab then shows "Model installed"', r.some((t) => /Model installed/.test(t)), J(r));
+  r = await js(`const n = await E.broll.indexMedia({ vision: false }); const vs = E.store.getState().media.filter((x) => x.brollIndex?.vec);
+    const sug = await E.broll.suggestBRollSmart();
+    const sv = await E.broll.embedTexts(['ทะเลสวยมาก คลื่นซัดเข้าหาดทราย', 'The board members sat around the conference table.', 'Climbing up to the summit was exhausting.']);
+    const sims = sv.map((v) => vs.map((x) => x.name + ' ' + x.brollIndex.vec.reduce((a, y, i) => a + y * v[i], 0).toFixed(2)));
+    return { sims, n, vecs: vs.map((x) => x.brollIndex.vec.length), sug: sug.map((g) => ({ t0: g.t0, c: g.candidates.map((c) => [c.name, c.score, c.why.join(' ')]) })) };`);
+  ok('Index Media adds a 384-number meaning vector to every file', r.n === 4 && r.vecs.length === 4 && r.vecs.every((n) => n === 384), J(r));
+  console.log('  similarities: ' + J(r.sims));
+  const top = (t) => r.sug.find((g) => Math.abs(g.t0 - t) < 0.01)?.c[0];
+  ok('Thai "the sea is beautiful, waves on the sand" suggests beach_sunset.png (by meaning)', top(1)?.[0] === 'beach_sunset.png' && /meaning/.test(top(1)[2]), J(r.sug));
+  ok('"the board members sat around the conference table" suggests office_meeting.png', top(5)?.[0] === 'office_meeting.png', J(r.sug));
+  ok('"climbing up to the summit" suggests mountain_hiking.png', top(10)?.[0] === 'mountain_hiking.png', J(r.sug));
+  ok('unrelated files are not suggested for a sentence', r.sug.every((g) => g.c.length <= 2), J(r.sug));
 });

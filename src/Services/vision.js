@@ -1,3 +1,4 @@
+import './noTelemetry';
 import { FilesetResolver, FaceLandmarker, ObjectDetector } from '@mediapipe/tasks-vision';
 
 // Offline vision models (bundled in dist/mp, served through es-app://). Lazy singletons.

@@ -7,6 +7,7 @@ const { killAll } = require('./ffjobs');
 require('./media');
 require('./workflow');
 const renderWindow = require('./renderWindow');
+const models = require('./models');
 
 // Privileged media scheme: CORS-enabled + streamable so <video>/<audio> can feed WebAudio and WebGL.
 protocol.registerSchemesAsPrivileged([{ scheme: 'es-app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true } }, { scheme: 'es-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } }]);
@@ -93,6 +94,8 @@ const filters = {
 
 // paths picked in a dialog are what the renderer may write / delete / run beyond its own data (electron/fileGuard.js)
 const G = guard();
+// optional AI model packs, downloaded only when the user asks (electron/models.js)
+const modelPacks = models.install(ipcMain, app);
 // projects the user opened or saved (in a dialog, from Explorer, by drag and drop) stay openable from File > Open Recent:
 // the list is kept by the main process (userData/recent-projects.json), not by the page
 const recentFile = () => path.join(app.getPath('userData'), 'recent-projects.json');
@@ -155,8 +158,10 @@ app.whenReady().then(() => {
   const MIME = { '.wasm': 'application/wasm', '.js': 'text/javascript', '.task': 'application/octet-stream', '.tflite': 'application/octet-stream' };
   protocol.handle('es-app', async (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '');
-    const dist = path.join(__dirname, '..', 'dist'); const full = path.join(dist, rel);
+    const dist = path.join(__dirname, '..', 'dist'); let full = path.join(dist, rel);
     if (!inside(full, dist)) return new Response('forbidden', { status: 403 }); // a sibling such as dist-other/ is outside dist/
+    // model files: bundled (dist/models) or a downloaded pack (userData/models)
+    if (rel.startsWith('models/')) { full = models.resolveModelFile(rel.slice(7), modelPacks.roots()); if (!full) return new Response('not found', { status: 404 }); }
     const r = await net.fetch(pathToFileURL(full).toString());
     const h = new Headers(r.headers); h.set('Access-Control-Allow-Origin', '*'); const ct = MIME[path.extname(full)]; if (ct) h.set('Content-Type', ct);
     return new Response(r.body, { status: r.status, headers: h });

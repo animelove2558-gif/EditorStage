@@ -3,7 +3,9 @@ import React, { useMemo, useState } from 'react';
 import NumInput from './NumInput';
 import { useStore, set, switchSequence } from '../Core/store';
 import { analyzeMoments, rankMoments, createShorts, cancelShorts, momentTitle, FEATURES, DEFAULT_WEIGHTS } from '../Services/ai/shorts';
-import { indexMedia, cancelIndex, suggestBRoll, placeBRoll } from '../Services/ai/broll';
+import { indexMedia, cancelIndex, suggestBRollSmart, placeBRoll, EMBED_PACK } from '../Services/ai/broll';
+import { subscribe as onPacks, packInfo } from '../Services/ai/modelPacks';
+import ModelPack from './ModelPack';
 import { transcribeSequence, cancelTranscribe, sequenceSources } from '../Services/ai/transcript';
 import { CAPTION_PRESETS } from '../Services/ai/captions';
 import { ASPECTS } from '../Services/ai/reframe';
@@ -84,16 +86,19 @@ export function ShortsTab() {
 export function BRollTab() {
   const media = useStore((s) => s.media); const seq = useStore((s) => s.sequence);
   const usable = media.filter((m) => (m.kind === 'video' || m.kind === 'image') && m.status === 'ready' && !m.synthetic);
-  const done = usable.filter((m) => m.brollIndex).length;
+  const [meaning, setMeaning] = useState(() => !!packInfo(EMBED_PACK)?.installed);
+  React.useEffect(() => onPacks(() => setMeaning(!!packInfo(EMBED_PACK)?.installed)), []);
+  const done = usable.filter((m) => m.brollIndex && (!meaning || m.brollIndex.vec)).length;
   const [p, setP] = useState(null); const [busy, setBusy] = useState(false); const [vision, setVision] = useState(true); const [sug, setSug] = useState(null);
   const index = async (force) => { setBusy(true); setP({ stage: 'Starting', progress: 0 }); try { const n = await indexMedia({ force, vision }, setP); notify(`Indexed ${n} file${n === 1 ? '' : 's'} for B-Roll`); } catch (e) { notify(`Index failed: ${e.message}`); } setP(null); setBusy(false); };
-  const suggest = () => { try { const r = suggestBRoll(); setSug(r); if (!r.length) notify('Smart B-Roll: no matching media for this transcript'); } catch (e) { notify(`Smart B-Roll: ${e.message}`); } };
+  const suggest = async () => { try { const r = await suggestBRollSmart(); setSug(r); if (!r.length) notify('Smart B-Roll: no matching media for this transcript'); } catch (e) { notify(`Smart B-Roll: ${e.message}`); } };
   React.useEffect(() => { if (sug) suggest(); }, [seq.clips.length]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div className="broll">
     <p className="dim">Matches what is said in each sentence with the project's clips and stills (file names, their speech, and objects seen in the picture), then puts the shot on the track above.</p>
     <TranscriptRow busy={busy} setBusy={setBusy} />
     <Row label="Media index"><span className="dim">{done} of {usable.length} indexed</span></Row>
     <Row label="Look at the picture" hint="Run the object detector on 3 frames of each file (on this computer)"><input type="checkbox" checked={vision} onChange={(e) => setVision(e.target.checked)} /></Row>
+    <Row label="Match by meaning" hint="A multilingual sentence model (Thai, English and 50+ languages) also matches sentences and files that share no word; downloaded once, then offline"><ModelPack id={EMBED_PACK} /></Row>
     <div className="st-actions"><button disabled={busy || done === usable.length} onClick={() => index(false)}>Index Media</button><button disabled={busy || !usable.length} onClick={() => index(true)}>Re-index All</button><button className="primary" disabled={busy || !done} onClick={suggest}>Suggest B-Roll</button></div>
     <Progress p={p} onCancel={cancelIndex} />
     {sug && <ul className="list broll-list">{sug.map((g) => <li key={`${g.t0}`}>

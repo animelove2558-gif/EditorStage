@@ -1,12 +1,29 @@
 // Smart B-Roll (Create > B-Roll, Smart Tools > Smart B-Roll...): index the project's video and still images (file name,
 // transcript, objects seen by the on-device detector) and suggest cutaways for what is being said in each sentence of the
 // sequence transcript. Placing a suggestion puts the shot on the first free video track above the picture (no audio).
+// With the optional multilingual sentence model installed (Download in the B-Roll tab), files and sentences are also
+// matched by meaning ("my puppy loves the park" finds dog_walk.mp4 even without a shared word), in Thai and English.
 import { getState, edit } from '../../Core/store';
 import { placeMedia, addTrackTo } from '../../Core/commands';
 import { fileUrl } from '../media';
 import { detectObjects } from '../vision';
 import { sequenceWords } from './transcript';
 import { segmentWords } from './stt';
+import { isInstalled } from './modelPacks';
+import { cosine, meaningScore, packVec, describeMedia } from './brollScore';
+
+export const EMBED_PACK = 'multilingual-embed';
+let ew = null, eid = 0; const ewait = new Map();
+/** sentence vectors (unit length) for texts, from the sentence model worker */
+export function embedTexts(texts) {
+  if (!ew) {
+    ew = new Worker(new URL('embed.worker.js', document.baseURI).href);
+    ew.onmessage = (e) => { const w = ewait.get(e.data.id); if (w) { ewait.delete(e.data.id); w(e.data); } };
+    ew.onerror = (e) => { for (const w of ewait.values()) w({ error: e.message || 'sentence model worker failed' }); ewait.clear(); ew = null; };
+  }
+  const id = ++eid;
+  return new Promise((res, rej) => { ewait.set(id, (m) => (m.error ? rej(new Error(m.error)) : res(m.vecs))); ew.postMessage({ id, texts }); });
+}
 
 // COCO classes of the object detector (EfficientDet-Lite0) with Thai and English words that mean the same thing.
 const CONCEPTS = {
@@ -75,8 +92,9 @@ export function cancelIndex() { if (running) running.cancelled = true; }
  * Index the video / still images of the project (only the ones not indexed yet, or all with force). Saved with the project
  * (media.brollIndex = { labels: [[concept, weight, source]] }). One undo step. Returns the number indexed.
  */
-export async function indexMedia({ force = false, vision = true } = {}, onProgress = () => {}) {
-  const list = getState().media.filter((m) => usable(m) && (force || !m.brollIndex));
+export async function indexMedia({ force = false, vision = true, meaning } = {}, onProgress = () => {}) {
+  if (meaning === undefined) meaning = await isInstalled(EMBED_PACK).catch(() => false);
+  const list = getState().media.filter((m) => usable(m) && (force || !m.brollIndex || (meaning && !m.brollIndex.vec)));
   const me = running = { cancelled: false }; const res = {};
   try {
     for (let i = 0; i < list.length; i++) {
@@ -91,6 +109,13 @@ export async function indexMedia({ force = false, vision = true } = {}, onProgre
       if (me.cancelled) throw new Error('Cancelled');
       res[m.id] = { labels: [...lab].map(([c, [w, src]]) => [c, +w.toFixed(2), src]), vision };
     }
+    // by meaning: one vector per file from its name, what the detector saw and the start of its speech
+    if (meaning && list.length) {
+      onProgress({ stage: 'Reading by meaning', progress: 0.99 });
+      const vecs = await embedTexts(list.map((m) => describeMedia(m.name, res[m.id].labels, m.transcript?.words || [])));
+      if (me.cancelled) throw new Error('Cancelled');
+      list.forEach((m, i) => { res[m.id].vec = packVec(vecs[i]); });
+    }
     if (list.length) edit('Index Media for B-Roll', ({ media }) => { for (const x of media) if (res[x.id]) x.brollIndex = res[x.id]; });
     onProgress({ stage: '', progress: 1 });
     return list.length;
@@ -102,20 +127,33 @@ const vtracks = (seq) => seq.tracks.filter((t) => t.kind === 'video').map((t) =>
  * Suggestions for the sentences of the active sequence: [{ t0, t1, text, candidates: [{ mediaId, name, score, why: [word] }] }].
  * Media already visible in that sentence is not suggested.
  */
-export function suggestBRoll({ max = 5, maxDur = 8 } = {}) {
-  const s = getState(); const seq = s.sequence; const words = sequenceWords(seq);
+function sentences(maxDur) {
+  const words = sequenceWords(getState().sequence);
   if (!words.length) throw new Error('The sequence has no transcript yet');
+  return segmentWords(words, { maxChars: 80, maxDur, pause: 0.6 });
+}
+/** suggestBRoll, also matching by meaning when files were indexed with the sentence model and it is installed */
+export async function suggestBRollSmart(opts = {}) {
+  const segs = sentences(opts.maxDur ?? 8);
+  const anyVec = getState().media.some((m) => usable(m) && m.brollIndex?.vec);
+  if (!anyVec || !(await isInstalled(EMBED_PACK).catch(() => false))) return suggestBRoll(opts);
+  return suggestBRoll({ ...opts, sentenceVecs: await embedTexts(segs.map((g) => g.text)) });
+}
+export function suggestBRoll({ max = 5, maxDur = 8, sentenceVecs = null } = {}) {
+  const s = getState(); const seq = s.sequence;
   const idx = s.media.filter((m) => usable(m) && m.brollIndex);
-  const segs = segmentWords(words, { maxChars: 80, maxDur, pause: 0.6 });
+  const segs = sentences(maxDur);
   const vt = new Set(vtracks(seq));
-  return segs.map((g) => {
-    const want = concepts(g.text);
+  return segs.map((g, gi) => {
+    const want = concepts(g.text); const sv = sentenceVecs?.[gi];
     const shown = new Set(seq.clips.filter((c) => vt.has(c.track) && c.mediaId && c.start < g.t1 && c.start + c.dur > g.t0).map((c) => c.mediaId));
     const candidates = [];
     for (const m of idx) {
       if (shown.has(m.id)) continue;
       let score = 0; const why = [];
       for (const [c, w] of m.brollIndex.labels) if (want.has(c)) { score += w; why.push(c); }
+      const sim = sv && m.brollIndex.vec ? cosine(sv, m.brollIndex.vec) : 0; const ms = meaningScore(sim);
+      if (ms > 0) { score += ms; why.push(`meaning ${Math.round(sim * 100)}%`); }
       if (score > 0) candidates.push({ mediaId: m.id, name: m.name, score: +score.toFixed(2), why });
     }
     candidates.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));

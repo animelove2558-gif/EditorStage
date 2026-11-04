@@ -51,6 +51,11 @@ contextBridge.exposeInMainWorld('editorstage', {
     onProgress: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('archive:progress', h); return () => ipcRenderer.removeListener('archive:progress', h); },
   },
   pickFolder: () => ipcRenderer.invoke('dialog:folder'),
+  // optional AI model packs (electron/models.js): downloaded by the main process only when the user asks
+  models: {
+    list: () => ipcRenderer.invoke('models:list'), download: (id) => ipcRenderer.invoke('models:download', id), cancel: (id) => ipcRenderer.invoke('models:cancel', id),
+    onProgress: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('models:progress', h); return () => ipcRenderer.removeListener('models:progress', h); },
+  },
   // Export Queue in the hidden render window (electron/renderWindow.js): start/cancel/progress from the main window,
   // onJob/progress/done/ready on the render window's side
   render: {

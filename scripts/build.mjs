@@ -12,6 +12,7 @@ const ctxs = await Promise.all([
   esbuild.context({ ...common, entryPoints: ['src/main.jsx'], outfile: 'dist/renderer.js', format: 'iife', define: { 'process.env.NODE_ENV': process.env.ES_DEV ? '"development"' : '"production"' } }),
   ...(dev ? [esbuild.context({ ...common, entryPoints: ['src/mogrt-test.js'], outfile: 'dist/mogrt-test.js', format: 'iife' })] : []),
   esbuild.context({ ...common, entryPoints: ['src/Services/ai/stt.worker.js'], outfile: 'dist/stt.worker.js', format: 'iife' }),
+  esbuild.context({ ...common, entryPoints: ['src/Services/ai/embed.worker.js'], outfile: 'dist/embed.worker.js', format: 'iife' }),
   esbuild.context({ ...common, entryPoints: ['src/Core/workers/dsp.worker.js'], outfile: 'dist/dsp.worker.js', format: 'iife' }),
 ]);
 

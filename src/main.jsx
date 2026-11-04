@@ -31,6 +31,7 @@ import * as ducking from './Services/ducking';
 import * as mediaLink from './Services/mediaLink';
 import * as shorts from './Services/ai/shorts';
 import * as broll from './Services/ai/broll';
+import * as modelPacks from './Services/ai/modelPacks';
 import * as health from './Services/healthCheck';
 import * as filters from './Services/filters';
 import * as segment from './Services/segment';
@@ -68,7 +69,7 @@ import { isRenderWindow, installRenderHost } from './Services/renderHost';
 import NumInput from './Components/NumInput';
 import * as reactDom from 'react-dom/client';
 
-window.__es = { colorAuto, projectFile, NumInput, react: React, reactDom, prefs, compositor, moreTransitions, moreVideoFx, presets, fxPreview, catalog, shortcuts, markers, attributes, menus, shorts, broll, mediaLink, health, filters, segment, hoverPreview, ducking, exportQueue, tracking, transcript, readLoudness, crossfadeGains, store, media, cmds, VIDEO_FX, AUDIO_FX, VIDEO_TRANSITION_IDS, params, dnd, audio, editing, exporter, gfx, flatten: flat, stab, vision, morph, validPreviewAt, mogrt, mogrtLibrary, mogrtRender,
+window.__es = { colorAuto, projectFile, NumInput, react: React, reactDom, prefs, compositor, moreTransitions, moreVideoFx, presets, fxPreview, catalog, shortcuts, markers, attributes, menus, shorts, broll, modelPacks, mediaLink, health, filters, segment, hoverPreview, ducking, exportQueue, tracking, transcript, readLoudness, crossfadeGains, store, media, cmds, VIDEO_FX, AUDIO_FX, VIDEO_TRANSITION_IDS, params, dnd, audio, editing, exporter, gfx, flatten: flat, stab, vision, morph, validPreviewAt, mogrt, mogrtLibrary, mogrtRender,
   silence, stt, diarize, reframe, captions, audiostage, archive, versions, layout, interchange, fonts, proxy, compare, trim, remix, remixClip, retimed }; // debug/automation handle
 
 // the hidden Export Queue window (?mode=render) renders queued exports and shows no UI

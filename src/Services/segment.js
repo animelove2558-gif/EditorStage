@@ -6,6 +6,7 @@
 // One mask per source frame (and subject) is computed from the frame the clip shows and cached, so playback reuses it and
 // Export waits for exactly the same mask (exporter.js prepareFrame).
 // (Magic Touch is the published single-file model: it runs through the Legacy interactive segmenter API)
+import './noTelemetry';
 import { FilesetResolver, ImageSegmenter, InteractiveSegmenterLegacy } from '@mediapipe/tasks-vision';
 import { resolveParams } from '../Core/params';
 

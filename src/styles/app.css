@@ -414,3 +414,7 @@ body.ui-light { --bg:#3a3a3a; --panel:#444; --panel2:#505050; --line:#5e5e5e; --
   background: linear-gradient(135deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%) 0 0 / 8px 8px repeat-y, linear-gradient(45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%) 0 4px / 8px 8px repeat-y; opacity: 0.85; }
 .remix-ghost { position: absolute; top: 2px; bottom: 2px; border: 1px dashed #b996ff; background: #7b4fd633; color: #fff; font: 11px system-ui; padding: 2px 4px; pointer-events: none; z-index: 5; white-space: nowrap; overflow: hidden; }
 .remix-controls .mrow input[type=range] { flex: 1; min-width: 60px; }
+/* optional AI model packs (ModelPack.jsx) */
+.modelpack { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.modelpack.ok { color: #7fd17f; }
+.modelpack .err { color: #ff8a80; }
