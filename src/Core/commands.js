@@ -592,7 +592,7 @@ const exportAAF = async () => {
   const { exportAAFFile } = await import('../Services/interchange/aafExport');
   try {
     const r = await exportAAFFile({ cancelled: () => renderCancel, onProgress: (p, text) => { if (!getState().dialog) set({ dialog: { type: 'renderProgress' } }); set({ renderProgress: { p, text } }); } });
-    if (r) notify(`Exported ${r.files[0].split(/[\\/]/).pop()} (${r.clips} audio clips${r.skipped ? `; ${r.skipped} clips without usable audio were left out` : ''})`);
+    if (r) notify(`Exported ${r.files[0].split(/[\\/]/).pop()} (${r.clips} audio clips${r.surround ? ', 5.1 tracks' : ''}${r.videoClips ? `, ${r.videoClips} video clips as reference` : ''}${r.skipped ? `; ${r.skipped} clips without usable audio were left out` : ''})`);
   } catch (e) { notify(String(e.message) === 'Cancelled' ? 'AAF export cancelled' : `Export failed: ${e.message || e}`); }
   set({ dialog: null, renderProgress: null });
 };

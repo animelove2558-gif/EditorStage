@@ -259,4 +259,45 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   r = await tileOf(await js('return MG;'));
   ok('the MOGRT clip shows a rendered frame of the template (lit pixels), not an icon', r && r.lit > 0.01, J(r));
   r = await js(`E.cmds.run('view.thumbs.headTail'); await T.tick(50); return true;`);
+
+  console.log('D10 AAF: volume / gain / pan, crossfades, 5.1, video reference');
+  // 5.1 file: a different tone in every channel (L 200, R 300, C 400, LFE 50, Ls 500, Rs 600 Hz)
+  const six = make('six.wav', ['-f', 'lavfi', '-i', 'sine=f=200:d=3', '-f', 'lavfi', '-i', 'sine=f=300:d=3', '-f', 'lavfi', '-i', 'sine=f=400:d=3', '-f', 'lavfi', '-i', 'sine=f=50:d=3', '-f', 'lavfi', '-i', 'sine=f=500:d=3', '-f', 'lavfi', '-i', 'sine=f=600:d=3',
+    '-filter_complex', '[0:a][1:a][2:a][3:a][4:a][5:a]join=inputs=6:channel_layout=5.1:map=0.0-FL|1.0-FR|2.0-FC|3.0-LFE|4.0-BL|5.0-BR[a]', '-map', '[a]', '-c:a', 'pcm_s16le']);
+  const st2 = make('st2.wav', ['-f', 'lavfi', '-i', 'sine=f=440:d=4', '-ac', '2', '-c:a', 'pcm_s16le']);
+  const pic = make('pic.mp4', ['-f', 'lavfi', '-i', 'testsrc=s=320x180:r=25:d=4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']);
+  r = await js(`T.fresh(320, 180, 25); const s6 = await T.imp(${J(six)}); const s2 = await T.imp(${J(st2)}); const v = await T.imp(${J(pic)});
+    const p = await window.editorstage.probe(${J(six)});
+    const [a6] = T.place(s6, 0, 'A1'); T.patch(a6, (c) => { c.dur = 2; c.volume = { level: { v: 0, keys: [{ t: 0.5, v: 0 }, { t: 1.5, v: -12 }] } }; c.audio = { ...(c.audio || {}), gain: -6 }; });
+    const [x] = T.place(s2, 0, 'A2'); T.patch(x, (c) => { c.dur = 1.5; c.pan = { v: 60, keys: null }; }); const [y] = T.place(s2, 1.5, 'A2'); T.patch(y, (c) => { c.dur = 1.5; c.inPoint = 1; });
+    E.store.edit('xfade', ({ seq }) => { seq.transitions = [...(seq.transitions || []), { id: 'xf1', kind: 'audio', name: 'Constant Power', track: 'A2', aId: x, bId: y, at: 1.5, dur: 0.5 }]; });
+    const vids = E.store.getState().sequence.clips.filter((c) => c.track === 'V1'); for (const c of vids) E.store.edit('rm', ({ seq }) => { seq.clips = seq.clips.filter((q) => q.id !== c.id || q.mediaId === v.id); });
+    const [vc] = T.place(v, 1, 'V1'); T.patch(vc, (c) => { c.inPoint = 0.4; c.dur = 2; });
+    E.store.edit('noaudio', ({ seq }) => { const vv = seq.clips.find((q) => q.id === vc); seq.clips = seq.clips.filter((q) => !(q.linkId && q.linkId === vv.linkId && q.id !== vc)); });
+    return { ch: p.audioChannels };`);
+  ok('probe reports the channel count (5.1 file: 6)', r.ch === 6, J(r));
+  const aaf2 = out('fx.aaf'); nextSave.push(aaf2);
+  const log2 = await js(`await E.cmds.commands['file.exportAAF'](); return E.store.getState().log.slice(-1)[0];`);
+  ok('AAF export reports 5.1 tracks and the video reference', /Exported fx\.aaf \(3 audio clips, 5\.1 tracks, 1 video clips as reference/.test(log2), log2);
+  r = await js(`const f = E.interchange.readCFB(new Uint8Array(await window.editorstage.readFile(${J(aaf2)})));
+    const kid = (n, name) => n && n.children.find((c) => c.name === name);
+    const props = (stg) => { const d = kid(stg, 'properties').data(); const v = new DataView(d.buffer); const n = v.getUint16(2, true); const o = {}; let at = 4 + n * 6;
+      for (let i = 0; i < n; i++) { const pid = v.getUint16(4 + i * 6, true), len = v.getUint16(8 + i * 6, true); o[pid] = d.slice(at, at + len); at += len; } return o; };
+    const s16 = (b) => { let s = ''; for (let i = 0; i + 1 < b.length; i += 2) { const c = b[i] | (b[i + 1] << 8); if (!c) break; s += String.fromCharCode(c); } return s; };
+    const cls = (s) => [...s.clsid].map((x) => x.toString(16).padStart(2, '0')).join('').slice(12, 16);
+    const content = kid(kid(f.tree, 'Header-2'), 'Content-3b03'); const mobs = content.children.filter((c) => /^Mobs-1901\\{/.test(c.name));
+    const comp = mobs.find((m) => cls(m) === '0035'); const slots = comp.children.filter((c) => /^Slots-4403\\{/.test(c.name)).sort((a, b) => parseInt(a.name.slice(11), 16) - parseInt(b.name.slice(11), 16));
+    const names = slots.map((s) => s16(props(s)[0x4802]));
+    const seg = (s) => kid(s, 'Segment-4803'); const comps = (s) => seg(s).children.filter((c) => /^Components-1001\\{/.test(c.name)).sort((a, b) => parseInt(a.name.slice(16), 16) - parseInt(b.name.slice(16), 16)).map(cls);
+    const ess = content.children.filter((c) => /^EssenceData-1902\\{/.test(c.name)).map((e) => kid(e, 'Data-2702').data());
+    const hz = (d) => { const n = d.length / 3; let zc = 0, prev = 0; for (let i = 0; i < n; i++) { const v = ((d[i * 3] | (d[i * 3 + 1] << 8) | (d[i * 3 + 2] << 16)) << 8 >> 8); if (i && prev < 0 && v >= 0) zc++; prev = v; } return Math.round(zc / (n / 48000)); };
+    const srcNames = mobs.filter((m) => cls(m) === '0037').map((m) => s16(props(m)[0x4402]));
+    const vsrc = mobs.find((m) => cls(m) === '0037' && cls(kid(m, 'EssenceDescription-4701')) === '0028');
+    const url = vsrc ? s16(props(kid(kid(vsrc, 'EssenceDescription-4701'), 'Locator-2f01{0}'))[0x4001]) : null;
+    return { names, a1: comps(slots[0]), a2l: comps(slots[6]), a2r: comps(slots[7]), v: comps(slots[8]), hz: ess.map(hz), srcNames, url, n: slots.length };`);
+  ok('AAF: the 5.1 track breaks out to 6 mono tracks (L R C LFE Ls Rs), the stereo track to 2, then V1 + timecode', J(r.names) === J(['A1 L', 'A1 R', 'A1 C', 'A1 LFE', 'A1 Ls', 'A1 Rs', 'A2 L', 'A2 R', 'V1', 'TC1']), J(r.names));
+  ok('AAF: each 5.1 channel embeds its own audio (200 / 300 / 400 / 50 / 500 / 600 Hz)', J(r.hz.slice(0, 6).map((h) => Math.round(h / 10) * 10)) === J([200, 300, 400, 50, 500, 600]), J(r.hz));
+  ok('AAF: Volume keyframes + clip gain go as a Mono Audio Gain around each 5.1 clip', J(r.a1) === J(['000a']), J(r.a1));
+  ok('AAF: the audio crossfade is a Transition between the two clips (Panner balance as gain on the first)', J(r.a2l) === J(['000a', '0017', '0011']) && J(r.a2r) === J(['0011', '0017', '0011']), J({ l: r.a2l, r: r.a2r }));
+  ok('AAF: V1 is a video reference: filler, then the clip; the file is linked by URL, not embedded', J(r.v) === J(['0009', '0011']) && /^file:\/\/\/.*pic\.mp4$/.test(r.url || '') && r.hz.length === 10, J({ v: r.v, url: r.url, ess: r.hz.length }));
 });

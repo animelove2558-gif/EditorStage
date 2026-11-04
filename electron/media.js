@@ -108,7 +108,9 @@ ipcMain.handle('media:probe', (_e, src) => new Promise((resolve) => {
     const dur = /Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/.exec(err);
     const vline = /Stream #.*Video: ([^\n]*)/.exec(err); const pix = vline && /(?:^|, )(\w+)(?:\(|,)/.exec(vline[1].split(', ').slice(1).join(', ') + ',');
     const size = vline && /, (\d{2,5})x(\d{2,5})/.exec(vline[1]); const still = vline && /(png|mjpeg|bmp|tiff|webp|gif|jpeg2000|dpx|exr|targa|psd|qoi|pcx|sgi|sunrast|xwd|pbm|pgm|ppm|pam)/.test(vline[1].split(',')[0]) && !/Duration: (?!00:00:00\.0[0-4])/.test(err);
-    resolve({ ok: true, hasAudio: /Stream #.*Audio:/.test(err), hasVideo: !!vline, fps: fps ? +fps[1] : null, duration: dur ? +dur[1] * 3600 + +dur[2] * 60 + +dur[3] : null,
+    const aline = /Stream #.*Audio: ([^\n]*)/.exec(err); const lay = aline && /, (mono|stereo|2\.1|quad|5\.0|5\.1|6\.1|7\.1|(\d+) channels)\b/.exec(aline[1]);
+    const audioChannels = !lay ? (aline ? 2 : 0) : lay[2] ? +lay[2] : { mono: 1, stereo: 2, '2.1': 3, quad: 4, '5.0': 5, '5.1': 6, '6.1': 7, '7.1': 8 }[lay[1]];
+    resolve({ ok: true, audioChannels, hasAudio: /Stream #.*Audio:/.test(err), hasVideo: !!vline, fps: fps ? +fps[1] : null, duration: dur ? +dur[1] * 3600 + +dur[2] * 60 + +dur[3] : null,
       pixFmt: pix ? pix[1] : null, alpha: !!(vline && /\b(yuva|rgba|argb|bgra|abgr|gbrap|ya8|ya16|pal8)/.test(vline[1])), width: size ? +size[1] : 0, height: size ? +size[2] : 0, still: !!still, codec: vline ? vline[1].split(/[ ,]/)[0] : null, audio: (/Stream #.*Audio: ([^\n]*)/.exec(err) || [])[1]?.trim() || null, bitrate: (/bitrate: (\d+ kb\/s)/.exec(err) || [])[1] || null });
   });
 }));
