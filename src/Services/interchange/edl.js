@@ -2,6 +2,7 @@
 // and constant speed (M2). Media are linked through "* SOURCE FILE:" comments (written by Premiere/Resolve/EditorStage).
 import { framesToTC, tcToFrames, dropFrameDefault, timebase } from './timecode.js';
 import { onTrack, baseName } from './model.js';
+import { parseAscSop, parseAscSat, cdlEffect } from './fxImport.js';
 
 const AUDIO_CH = { A1: 'A', A2: 'A2', A3: 'A3', A4: 'A4' };
 const reelOf = () => 'AX'; // EditorStage has no tape reels; AX + SOURCE FILE comments is what Premiere writes
@@ -71,6 +72,8 @@ export function parseEDL(text, fps, { videoTrack = 'V1' } = {}) {
     if (!cur) continue;
     if ((m = /^\*\s*FROM CLIP NAME:\s*(.*)$/i.exec(l))) { cur.from = m[1].trim(); continue; }
     if ((m = /^\*\s*TO CLIP NAME:\s*(.*)$/i.exec(l))) { cur.to = m[1].trim(); continue; }
+    // color: ASC CDL comments (the CMX3600 convention colorists and conform tools use)
+    { const sop = parseAscSop(l), sat = parseAscSat(l); if (sop || sat != null) { cur.cdl = { ...(cur.cdl || {}), ...(sop ? { sop } : {}), ...(sat != null ? { sat } : {}) }; continue; } }
     if ((m = /^\*\s*SOURCE FILE:\s*(.*)$/i.exec(l))) { cur.file = m[1].trim(); continue; }
     if ((m = /^M2\s+(\S+)\s+(-?[\d.]+)\s+(\S+)/i.exec(l))) { cur.speed = +m[2] / timebase(fps); continue; }
   }
@@ -105,12 +108,14 @@ export function parseEDL(text, fps, { videoTrack = 'V1' } = {}) {
         }
         const start = S(inc.recIn + half);
         const c = { id: `c${++cid}`, track, start, dur: S(inc.recOut) - start, inPoint: SF(inc.srcIn) + (half / fps) * speed, speed, mediaId: mediaFor(e.file, name, kind).id, name, enabled: true, linkId: link };
+        if (kind === 'video' && e.cdl) c.effects = [cdlEffect(e.cdl.sop || {}, e.cdl.sat)];
         desc.clips.push(c);
         if (prev && !fromBlack) { prev.dur = start - prev.start; }
         desc.transitions.push({ track, at: start, dur: SF(inc.tdur), name: 'Cross Dissolve', kind, aId: prev && !fromBlack ? prev.id : null, bId: c.id });
         lastOn.set(track, c);
       } else {
         const c = { id: `c${++cid}`, track, start: S(inc.recIn), dur: S(inc.recOut) - S(inc.recIn), inPoint: SF(inc.srcIn), speed, mediaId: mediaFor(e.file, name, kind).id, name, enabled: true, linkId: link };
+        if (kind === 'video' && e.cdl) c.effects = [cdlEffect(e.cdl.sop || {}, e.cdl.sat)];
         desc.clips.push(c); lastOn.set(track, c);
       }
     }

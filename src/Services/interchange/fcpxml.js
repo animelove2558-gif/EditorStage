@@ -4,6 +4,7 @@
 import { el, parseXml, kids, kid, findAll } from './xml.js';
 import { isNtsc } from './timecode.js';
 import { onTrack, linkPairs, pathToUrl, urlToPath, baseName } from './model.js';
+import { fcpxmlClipFx, attachFx } from './fxImport.js';
 
 const frameDur = (fps) => (isNtsc(fps) ? [1001, Math.round(fps) * 1000] : Number.isInteger(fps) ? [1, fps] : [100, Math.round(fps * 100)]);
 /** seconds -> rational FCPXML time on the frame grid */
@@ -86,8 +87,11 @@ export function parseFCPXML(text) {
     const base = { start: timelineStart, dur, inPoint: Math.max(0, start), speed, mediaId: m.id, name: node.attrs.name || m.name, enabled: node.attrs.enabled !== '0' };
     const wantV = m.kind === 'video' && en !== 'audio' && lane >= 0, wantA = m.hasAudio && en !== 'video';
     const link = wantV && wantA ? `l${++lid}` : null;
-    if (wantV) desc.clips.push({ id: `c${++cid}`, track: `V${lane + 1}`, ...base, linkId: link });
-    if (wantA) desc.clips.push({ id: `c${++cid}`, track: lane < 0 ? `A${-lane}` : `A${lane + 1}`, ...base, linkId: link });
+    // adjustments (transform, opacity, volume, crop) and filters with their keyframes
+    const fx = fcpxmlClipFx(node, { w: desc.width, h: desc.height, srcStart: parseTime(node.attrs.start), speed, parseTime });
+    if (fx.unknown.length) desc.unknownFx = [...(desc.unknownFx || []), ...fx.unknown];
+    if (wantV) desc.clips.push(attachFx({ id: `c${++cid}`, track: `V${lane + 1}`, ...base, linkId: link }, fx, true));
+    if (wantA) desc.clips.push(attachFx({ id: `c${++cid}`, track: lane < 0 ? `A${-lane}` : `A${lane + 1}`, ...base, linkId: link }, fx, false));
   };
   const spine = kid(seqEl, 'spine');
   for (const item of spine?.children || []) {

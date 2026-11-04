@@ -300,4 +300,28 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   ok('AAF: Volume keyframes + clip gain go as a Mono Audio Gain around each 5.1 clip', J(r.a1) === J(['000a']), J(r.a1));
   ok('AAF: the audio crossfade is a Transition between the two clips (Panner balance as gain on the first)', J(r.a2l) === J(['000a', '0017', '0011']) && J(r.a2r) === J(['0011', '0017', '0011']), J({ l: r.a2l, r: r.a2r }));
   ok('AAF: V1 is a video reference: filler, then the clip; the file is linked by URL, not embedded', J(r.v) === J(['0009', '0011']) && /^file:\/\/\/.*pic\.mp4$/.test(r.url || '') && r.hz.length === 10, J({ v: r.v, url: r.url, ess: r.hz.length }));
+  console.log('D11 Import EDL / FCPXML with effects, color and keyframes');
+  const redClip = make('red_clip.mp4', ['-f', 'lavfi', '-i', 'color=c=red:s=320x180:r=25:d=6', '-c:v', 'libx264', '-pix_fmt', 'yuv444p', '-qp', '0']);
+  const fxFile = out('graded.fcpxml');
+  fs.writeFileSync(fxFile, `<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.9"><resources><format id="r1" frameDuration="1/25s" width="320" height="180"/>
+<asset id="r2" name="red_clip" start="0s" duration="6s" hasVideo="1" hasAudio="0"><media-rep kind="original-media" src="${'file:///' + redClip.replace(/\\/g, '/')}"/></asset></resources>
+<library><event name="E"><project name="Graded"><sequence format="r1" duration="4s"><spine>
+<asset-clip ref="r2" offset="0s" start="1s" duration="4s" name="red_clip">
+  <adjust-blend amount="0.5"><param name="amount"><keyframeAnimation><keyframe time="1s" value="0.5"/><keyframe time="3s" value="1"/></keyframeAnimation></param></adjust-blend>
+  <adjust-transform scale="0.5 0.5"/>
+</asset-clip></spine></sequence></project></event></library></fcpxml>`);
+  r = await js(`const before = Object.keys(E.store.allSeqs()).length; const res = await E.interchange.importInterchange(${J(fxFile)}); const s = E.store.getState(); const c = s.sequence.clips.find((x) => x.track === 'V1');
+    E.store.set({ playhead: 0 }); await T.tick(100);
+    const a = await E.exporter.renderFrame(0, 320, 180), b = await E.exporter.renderFrame(2.5, 320, 180); const px = (img, x, y) => img.data[(y * 320 + x) * 4];
+    return { res, seqs: Object.keys(E.store.allSeqs()).length - before, scale: c?.motion?.scale?.v, op: c?.opacity?.opacity, centre0: px(a, 160, 90), centre1: px(b, 160, 90), corner: px(b, 10, 10) };`);
+  ok('FCPXML import brings the clip in with Opacity keyframes and Scale', r.seqs === 1 && r.scale === 50 && r.op?.v === 50 && r.op?.keys?.length === 2 && r.op.keys[1].t === 2 && r.res.withFx === 1, J(r));
+  ok('...and they render: half-transparent red at the start, opaque later, scaled to half (black corner)', Math.abs(r.centre0 - 128) < 20 && r.centre1 > 235 && r.corner < 10, J(r));
+  const edlFile = out('graded.edl');
+  fs.writeFileSync(edlFile, ['TITLE: CDL', 'FCM: NON-DROP FRAME', '', '001  AX       V     C        00:00:00:00 00:00:02:00 01:00:00:00 01:00:02:00', '* FROM CLIP NAME: red_clip.mp4', `* SOURCE FILE: ${redClip}`, '* ASC_SOP (0.5 1 1)(0 0.2 0)(1 1 1)', '* ASC_SAT 1', ''].join('\r\n'));
+  r = await js(`const res = await E.interchange.importInterchange(${J(edlFile)}); const s = E.store.getState(); const c = s.sequence.clips.find((x) => x.track === 'V1');
+    const img = await E.exporter.renderFrame(0.5, s.sequence.width, s.sequence.height); const i = ((s.sequence.height >> 1) * s.sequence.width + (s.sequence.width >> 1)) * 4;
+    return { res, fx: c?.effects?.map((e) => [e.name, e.effectId, e.params.sr.v, e.params.og.v]), rgb: [img.data[i], img.data[i + 1], img.data[i + 2]] };`);
+  ok('EDL import: ASC_SOP / ASC_SAT become an ASC CDL effect on the clip', J(r.fx) === J([['ASC CDL', 'Video Effects/Color Correction/ASC CDL', 0.5, 0.2]]), J(r));
+  ok('...and the grade renders (red slope 0.5, green offset +0.2)', Math.abs(r.rgb[0] - 128) < 20 && Math.abs(r.rgb[1] - 51) < 20 && r.rgb[2] < 20, J(r.rgb));
 });

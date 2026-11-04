@@ -394,7 +394,7 @@ async function importAny(paths) {
   const mediaFiles = paths.filter((p) => !seqFiles.includes(p));
   if (mediaFiles.length) await importPaths(mediaFiles, notify);
   for (const p of seqFiles) {
-    try { const r = await importInterchange(p); notify(`Imported ${r.name}: ${r.clips} clips${r.offline ? `, ${r.offline} offline media` : ''}${r.skipped ? `, ${r.skipped} unsupported items skipped` : ''}`); }
+    try { const r = await importInterchange(p); notify(`Imported ${r.name}: ${r.clips} clips${r.withFx ? ` (${r.withFx} with effects / color / keyframes)` : ''}${r.unknownFx?.length ? `; effects not carried: ${r.unknownFx.slice(0, 4).join(', ')}` : ''}${r.offline ? `, ${r.offline} offline media` : ''}${r.skipped ? `, ${r.skipped} unsupported items skipped` : ''}`); }
     catch (e) { notify(`Cannot import ${p.split(/[\\/]/).pop()}: ${e.message || e}`); }
   }
 }

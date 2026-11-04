@@ -5,6 +5,7 @@ import { writeXMEML, parseXMEML } from '../src/Services/interchange/xmeml.js';
 import { describeSequence, quantize, pathToUrl, urlToPath } from '../src/Services/interchange/model.js';
 import { framesToTC, tcToFrames } from '../src/Services/interchange/timecode.js';
 import { parseXml } from '../src/Services/interchange/xml.js';
+import { parseAscSop, parseAscSat } from '../src/Services/interchange/fxImport.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => { if (cond) pass++; else { fail++; console.log('FAIL', name, extra); } };
@@ -93,6 +94,88 @@ ok('EDL record TC hour offset', norm(parseEDL(writeEDL(desc).replace(/ 00:(\d\d:
   // Premiere style: -1 at edges inside transitions
   const prem = x.replace(/<start>150<\/start>/, '<start>-1</start>');
   ok('xmeml -1 start resolved from transition', norm(parseXMEML(prem)).join() === norm(back).join() && x.includes('<start>150</start>'));
+}
+
+// ---- Phase 9 D11: effects, color and keyframes come in with the edit ----
+{
+  const near = (a, b, e = 1e-3) => Math.abs(a - b) <= e;
+  const edl = `TITLE: Graded
+FCM: NON-DROP FRAME
+
+001  A001     V     C        01:00:10:00 01:00:12:00 01:00:00:00 01:00:02:00
+* FROM CLIP NAME: A001.mp4
+* ASC_SOP (1.2 1.0 0.8)(0.05 0.0 -0.05)(1.0 1.1 0.9)
+* ASC_SAT 0.75
+002  B002     V     C        01:00:00:00 01:00:01:00 01:00:02:00 01:00:03:00
+* FROM CLIP NAME: B002.mov
+003  C003     B     C        01:00:00:00 01:00:01:00 01:00:03:00 01:00:04:00
+* FROM CLIP NAME: C003.mov
+* ASC_SAT 0
+`;
+  const d = parseEDL(edl, 30);
+  const v1 = d.clips.filter((c) => c.track === 'V1');
+  const cdl = v1[0].effects?.[0];
+  ok('EDL: ASC_SOP / ASC_SAT become an ASC CDL effect on the event', cdl?.name === 'ASC CDL' && cdl.params.sr.v === 1.2 && cdl.params.sb.v === 0.8 && cdl.params.or.v === 0.05 && cdl.params.ob.v === -0.05 && cdl.params.pg.v === 1.1 && cdl.params.sat.v === 0.75, JSON.stringify(cdl));
+  ok('EDL: an event without CDL has no effect', !v1[1].effects);
+  const c3 = d.clips.filter((c) => c.name === 'C003.mov');
+  ok('EDL: ASC_SAT alone -> CDL with neutral slope/offset/power, on the video only (not the audio of a B event)', c3.length === 2 && c3.find((c) => c.track === 'V1').effects[0].params.sat.v === 0 && c3.find((c) => c.track === 'V1').effects[0].params.sr.v === 1 && !c3.find((c) => c.track === 'A1').effects, JSON.stringify(c3));
+  ok('EDL: parseAscSop rejects a malformed line', parseAscSop('* ASC_SOP (1 1)(0 0 0)(1 1 1)') === null && parseAscSat('* ASC_SAT x') === null);
+
+  const fx = `<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.9">
+  <resources>
+    <format id="r1" frameDuration="1/25s" width="1920" height="1080"/>
+    <asset id="r2" name="A001" start="0s" duration="60s" hasVideo="1" hasAudio="1"><media-rep kind="original-media" src="file:///C:/Footage/A001.mp4"/></asset>
+    <effect id="r3" name="Gaussian Blur" uid="FFGaussianBlur"/>
+    <effect id="r4" name="Color Board" uid="FFColorBoard"/>
+  </resources>
+  <library><event name="E"><project name="FX"><sequence format="r1" duration="10s"><spine>
+    <asset-clip ref="r2" offset="0s" start="10s" duration="4s" name="A001">
+      <adjust-transform position="10 -5" scale="1.5 1.5" rotation="90">
+        <param name="position"><keyframeAnimation><keyframe time="10s" value="0 0"/><keyframe time="12s" value="10 -5"/></keyframeAnimation></param>
+      </adjust-transform>
+      <adjust-blend amount="0.5"/>
+      <adjust-crop mode="trim"><trim-rect left="9" right="0" top="5" bottom="0"/></adjust-crop>
+      <adjust-volume amount="-6dB"><param name="amount"><keyframeAnimation><keyframe time="10s" value="0dB"/><keyframe time="11s" value="-12dB"/></keyframeAnimation></param></adjust-volume>
+      <filter-video ref="r3" name="Gaussian Blur"><param name="Amount" key="1" value="20"/></filter-video>
+      <filter-video ref="r4" name="Color Board"/>
+    </asset-clip>
+  </spine></sequence></project></event></library>
+</fcpxml>`;
+  const f = parseFCPXML(fx);
+  const fv = f.clips.find((c) => c.track === 'V1'), fa = f.clips.find((c) => c.track === 'A1');
+  ok('FCPXML: position (percent of frame height, y up) -> frame fraction (y down)', near(fv.motion.position.v[0], 0.5 + (10 * 1080) / 100 / 1920) && near(fv.motion.position.v[1], 0.55), JSON.stringify(fv.motion.position));
+  ok('FCPXML: position keyframes at clip-local times (start 10 s -> 0 s, 12 s -> 2 s)', fv.motion.position.keys.length === 2 && fv.motion.position.keys[0].t === 0 && fv.motion.position.keys[1].t === 2 && near(fv.motion.position.keys[0].v[0], 0.5), JSON.stringify(fv.motion.position.keys));
+  ok('FCPXML: scale 1.5 -> 150 %, rotation 90 (counter-clockwise) -> -90', fv.motion.scale.v === 150 && fv.motion.rotation.v === -90);
+  ok('FCPXML: blend amount 0.5 -> Opacity 50 %', fv.opacity.opacity.v === 50);
+  const crop = fv.effects.find((e) => e.name === 'Crop'); const blur = fv.effects.find((e) => e.name === 'Gaussian Blur');
+  ok('FCPXML: trim-rect -> Crop (left 9 % of height = 5.0625 % of width, top 5 %)', crop && near(crop.params.l.v, 5.0625) && crop.params.t.v === 5, JSON.stringify(crop));
+  ok('FCPXML: Gaussian Blur filter -> Gaussian Blur (Amount 20)', blur && blur.params.blurriness.v === 20);
+  ok('FCPXML: volume -6 dB with keyframes on the audio clip (not the video)', fa.volume.level.v === -6 && fa.volume.level.keys.map((k) => [k.t, k.v]).join() === '0,0,1,-12' && !fv.volume && !fa.motion);
+  ok('FCPXML: filters it cannot carry are reported (Color Board)', (f.unknownFx || []).includes('Color Board'), JSON.stringify(f.unknownFx));
+
+  const xm = `<?xml version="1.0" encoding="UTF-8"?>
+<xmeml version="5"><sequence id="s1"><name>P</name><rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>
+<media><video><format><samplecharacteristics><width>1920</width><height>1080</height></samplecharacteristics></format>
+<track><clipitem id="c1"><name>A001</name><start>0</start><end>100</end><in>50</in><out>150</out>
+  <file id="f1"><name>A001.mp4</name><pathurl>file:///C:/Footage/A001.mp4</pathurl><duration>1500</duration><media><video/><audio/></media></file>
+  <filter><effect><name>Basic Motion</name><effectid>basic</effectid><parameter><parameterid>scale</parameterid><value>100</value><keyframe><when>50</when><value>100</value></keyframe><keyframe><when>100</when><value>200</value></keyframe></parameter>
+    <parameter><parameterid>rotation</parameterid><value>45</value></parameter><parameter><parameterid>center</parameterid><value><horiz>0.1</horiz><vert>-0.2</vert></value></parameter></effect></filter>
+  <filter><effect><name>Opacity</name><effectid>opacity</effectid><parameter><parameterid>opacity</parameterid><value>80</value></parameter></effect></filter>
+  <filter><effect><name>Crop</name><effectid>crop</effectid><parameter><parameterid>left</parameterid><value>10</value></parameter><parameter><parameterid>top</parameterid><value>0</value></parameter></effect></filter>
+  <filter><effect><name>Three-Way Color Corrector</name><effectid>Color Corrector 3-way</effectid></effect></filter>
+</clipitem></track></video>
+<audio><track><clipitem id="c2"><name>A001</name><start>0</start><end>100</end><in>50</in><out>150</out><file id="f1"/>
+  <filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid><parameter><parameterid>level</parameterid><value>0.5</value><keyframe><when>50</when><value>1</value></keyframe><keyframe><when>75</when><value>0.5</value></keyframe></parameter></effect></filter>
+</clipitem></track></audio></media></sequence></xmeml>`;
+  const x = parseXMEML(xm);
+  const xv = x.clips.find((c) => c.track === 'V1'), xa = x.clips.find((c) => c.track === 'A1');
+  ok('XML: Basic Motion scale keyframes (when = source frames from the in point) -> 0 s 100 %, 2 s 200 %', xv.motion.scale.keys.map((k) => [k.t, k.v]).join() === '0,100,2,200', JSON.stringify(xv.motion.scale));
+  ok('XML: rotation 45, centre offset (0.1, -0.2) -> position (0.6, 0.3)', xv.motion.rotation.v === 45 && near(xv.motion.position.v[0], 0.6) && near(xv.motion.position.v[1], 0.3), JSON.stringify(xv.motion));
+  ok('XML: Opacity 80, Crop left 10', xv.opacity.opacity.v === 80 && xv.effects.find((e) => e.name === 'Crop').params.l.v === 10);
+  ok('XML: Audio Levels (linear gain) -> Volume dB keyframes 0 / -6 dB', near(xa.volume.level.v, -6.0206) && xa.volume.level.keys.length === 2 && xa.volume.level.keys[0].v === 0 && near(xa.volume.level.keys[1].v, -6.0206) && xa.volume.level.keys[1].t === 1, JSON.stringify(xa.volume));
+  ok('XML: effects it cannot carry are reported', (x.unknownFx || []).includes('Three-Way Color Corrector'), JSON.stringify(x.unknownFx));
+  ok('a clip without effects stays plain (round trip of an EditorStage export)', (() => { const rt = parseFCPXML(writeFCPXML(quantize(describeSequence(seq, media)))); return rt.clips.every((c) => !c.motion && !c.opacity && !c.volume && !c.effects); })());
 }
 
 console.log(`interchange: ${pass} passed, ${fail} failed`);

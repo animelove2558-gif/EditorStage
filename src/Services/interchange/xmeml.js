@@ -3,6 +3,7 @@
 import { el, parseXml, kids, kid, txt, findAll } from './xml.js';
 import { isNtsc, timebase, framesToTC, dropFrameDefault } from './timecode.js';
 import { onTrack, linkPairs, pathToUrl, urlToPath, baseName } from './model.js';
+import { xmemlClipFx, attachFx } from './fxImport.js';
 
 const rate = (fps) => el('rate', null, el('timebase', null, timebase(fps)), el('ntsc', null, isNtsc(fps) ? 'TRUE' : 'FALSE'));
 const fpsOf = (node) => { const tb = +txt(node, 'rate', 'timebase') || 30; return txt(node, 'rate', 'ntsc').toUpperCase() === 'TRUE' ? Math.round((tb * 1000) / 1001 * 1000) / 1000 : tb; };
@@ -82,6 +83,10 @@ export function parseXMEML(text) {
         let speed = 1; const sp = findAll(it, 'parameter').find((p) => txt(p, 'parameterid') === 'speed');
         if (sp) speed = (+txt(sp, 'value') || 100) / 100; else if (e > s && b > a) speed = Math.round(((b - a) / (e - s)) * 1e4) / 1e4;
         const c = { id: `c${++cid}`, track, start: S(s), dur: S(e - s), inPoint: S(a), speed, mediaId: m.id, name: txt(it, 'name') || m.name, enabled: txt(it, 'enabled').toUpperCase() !== 'FALSE', linkId: null };
+        // filters: Basic Motion, Opacity, Audio Levels, Crop, Gaussian Blur (with keyframes)
+        const fx = xmemlClipFx(it, { fps, inFrame: a, outFrame: b, speed });
+        if (fx.unknown.length) desc.unknownFx = [...(desc.unknownFx || []), ...fx.unknown];
+        attachFx(c, fx, kind === 'video');
         desc.clips.push(c); clipIds.set(it.attrs.id, c);
         const refs = kids(it, 'link').map((l) => txt(l, 'linkclipref')).filter(Boolean); if (refs.length > 1) linkGroups.push(refs);
       });

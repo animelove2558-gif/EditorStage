@@ -3,6 +3,8 @@ import { getState, edit, addSequence } from '../../Core/store';
 import { expandRemix } from '../remix';
 import { importPaths } from '../media';
 import { VIDEO_TRANSITION_IDS } from '../../Renderers/fx/transitions';
+import { defaultParams } from '../../Renderers/fx/videoEffects';
+import { DEFAULT_MOTION, DEFAULT_OPACITY, DEFAULT_VOLUME } from '../../Core/params';
 import { describeSequence, quantize, baseName } from './model.js';
 import { writeEDL, parseEDL } from './edl.js';
 import { writeFCPXML, parseFCPXML } from './fcpxml.js';
@@ -13,6 +15,10 @@ export { exportAAFFile } from './aafExport.js';
 export { readCFB } from './cfb.js';
 export const INTERCHANGE_EXT = ['edl', 'xml', 'fcpxml'];
 const uid = () => Math.random().toString(36).slice(2, 9);
+// imported effects ({ name, params } from fxImport.js) -> clip effects with the effect's other parameters at their defaults
+const FX_FOLDER = { 'ASC CDL': 'Color Correction', 'Gaussian Blur': 'Blur & Sharpen', Crop: 'Transform' };
+const appEffects = (list) => (list || []).filter((e) => FX_FOLDER[e.name]).map((e) => ({ id: uid(), effectId: `Video Effects/${FX_FOLDER[e.name]}/${e.name}`, name: e.name, category: 'Video',
+  folder: FX_FOLDER[e.name], enabled: true, params: { ...defaultParams(e.name), ...e.params } }));
 const EXT = { edl: 'edl', fcpxml: 'fcpxml', xmeml: 'xml' };
 
 /** Export the active sequence (Premiere XML: the selection when clips are selected). Returns { files, skipped } or null when cancelled. */
@@ -80,8 +86,11 @@ export async function importInterchange(path) {
     const isV = c.track[0] === 'V'; const id = uid(); ids.set(c.id, id);
     const link = c.linkId ? (links.get(c.linkId) || links.set(c.linkId, uid()).get(c.linkId)) : undefined;
     const partnered = !!c.linkId && desc.clips.some((x) => x !== c && x.linkId === c.linkId && x.track[0] !== c.track[0]);
-    seq.clips.push({ id, track: c.track, start: c.start, dur: c.dur, name: c.name, mediaId: m.id, inPoint: c.inPoint, speed: c.speed, enabled: c.enabled, effects: [], audio: { tag: null },
-      color: !isV ? '#43a047' : m.kind === 'image' ? '#c0742d' : '#5b7fd1', linkId: link, ...(isV && partnered ? { noAudio: true } : {}), ...(!isV && m.kind === 'video' ? { asAudio: true } : {}) });
+    seq.clips.push({ id, track: c.track, start: c.start, dur: c.dur, name: c.name, mediaId: m.id, inPoint: c.inPoint, speed: c.speed, enabled: c.enabled, effects: appEffects(c.effects), audio: { tag: null },
+      color: !isV ? '#43a047' : m.kind === 'image' ? '#c0742d' : '#5b7fd1', linkId: link, ...(isV && partnered ? { noAudio: true } : {}), ...(!isV && m.kind === 'video' ? { asAudio: true } : {}),
+      // Motion / Opacity / Volume read from the file (keyframes included)
+      ...(isV && c.motion ? { motion: { ...DEFAULT_MOTION(), ...c.motion } } : {}), ...(isV && c.opacity ? { opacity: { ...DEFAULT_OPACITY(), ...c.opacity } } : {}),
+      ...(!isV && c.volume ? { volume: { ...DEFAULT_VOLUME(), ...c.volume } } : {}) });
   }
   for (const x of desc.transitions) {
     const aId = x.aId ? ids.get(x.aId) : null, bId = x.bId ? ids.get(x.bId) : null; if (!aId && !bId) continue;
@@ -91,5 +100,6 @@ export async function importInterchange(path) {
   seq.markers = desc.markers.map((m) => ({ id: uid(), time: m.time, name: m.name || '' }));
   seq.duration = Math.max(60, ...seq.clips.map((c) => c.start + c.dur));
   addSequence(seq, true);
-  return { name: seq.name, clips: seq.clips.length, offline: offline.length, skipped: desc.skipped };
+  const withFx = seq.clips.filter((c) => c.effects.length || c.motion || c.opacity || c.volume).length;
+  return { name: seq.name, clips: seq.clips.length, offline: offline.length, skipped: desc.skipped, withFx, unknownFx: [...new Set(desc.unknownFx || [])] };
 }
