@@ -9,7 +9,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'es-clipview-'));
 const entry = path.join(tmp, 'entry.js'); const out = path.join(tmp, 'bundle.mjs');
-fs.writeFileSync(entry, `export { thumbSlots, frameIndex } from ${JSON.stringify(path.join(root, 'src/Services/thumbs.js'))};
+fs.writeFileSync(entry, `export { thumbSlots, frameIndex, renderedSlots } from ${JSON.stringify(path.join(root, 'src/Services/thumbs.js'))};
 export * from ${JSON.stringify(path.join(root, 'src/Core/clipBands.js'))};
 export { evalParam } from ${JSON.stringify(path.join(root, 'src/Core/params.js'))};
 export { VIDEO_FX } from ${JSON.stringify(path.join(root, 'src/Renderers/fx/videoEffects.js'))};`);
@@ -79,6 +79,22 @@ m.setBandParam(c3, blur.key, m.dragBandLine(blur, blur.get(c3), 0, 0.5));
 ok('an effect parameter band writes into the effect', c3.effects[0].params[blur.key.split('.')[2]].v > blur.min, J(c3.effects[0]));
 let vp = vol.get({}); vp = m.dragBandLine(vol, vp, 0, -0.25);
 ok('volume drag: half height → quarter = −6 dB', near(vp.v, -6.02, 0.02), J(vp));
+
+// ---- nested sequence / MOGRT tiles (Phase 9 D14): rendered at sequence times, not decoded at source times
+const N = (o = {}) => ({ id: 'n', start: 10, dur: 4, nestId: 'sq2', ...o });
+let rs = m.renderedSlots(N(), { W: 400, tw: 40, pps: 100, mode: 'head', fps: 30 });
+ok('nest Head: one tile at the clip start (sequence time)', rs.length === 1 && rs[0].t === 10 && rs[0].x === 0 && rs[0].w === 40, J(rs));
+rs = m.renderedSlots(N(), { W: 400, tw: 40, pps: 100, mode: 'headTail', fps: 30 });
+ok('nest Head and Tail: first and last frame of the clip', rs.length === 2 && rs[0].t === 10 && near(rs[1].t, 14 - 1 / 30) && rs[1].x === 360, J(rs));
+rs = m.renderedSlots(N(), { W: 400, tw: 40, pps: 100, mode: 'continuous', fps: 30 });
+ok('nest Continuous: at most 12 composited tiles, wider when capped, inside the clip', rs.length === 10 && rs.every((x, i) => near(x.t, 10 + (i * 40) / 100)) && m.renderedSlots(N({ dur: 40 }), { W: 4000, tw: 40, pps: 100, mode: 'continuous' }).length === 12, J(rs));
+const wide = m.renderedSlots(N({ dur: 40 }), { W: 4000, tw: 40, pps: 100, mode: 'continuous' });
+ok('capped tiles cover the whole clip', near(wide[1].x, 4000 / 12) && wide.at(-1).t < 50, J(wide.map((x) => x.t)));
+rs = m.renderedSlots({ id: 'g', start: 5, dur: 6, mogrt: { id: 'x' } }, { W: 600, tw: 40, pps: 100, mode: 'head', fps: 30 });
+ok('MOGRT Head: the frame 1 s in (its text has animated in)', rs.length === 1 && rs[0].t === 6, J(rs));
+rs = m.renderedSlots({ id: 'g', start: 5, dur: 1, mogrt: { id: 'x' } }, { W: 100, tw: 40, pps: 100, mode: 'head', fps: 30 });
+ok('MOGRT shorter than 2 s: the middle frame', rs[0].t === 5.5, J(rs));
+ok('rendered tiles: None / zero width -> none', !m.renderedSlots(N(), { W: 400, tw: 40, pps: 100, mode: 'none' }).length && !m.renderedSlots(N(), { W: 0, tw: 40, pps: 100, mode: 'head' }).length);
 
 console.log(`clip view: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

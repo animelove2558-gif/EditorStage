@@ -234,4 +234,29 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
       ok('Whisper Medium transcribes speech', ['quick', 'fox', 'dog'].every((w) => String(r).toLowerCase().includes(w)), J(r));
     }
   } else ok('speech sample made by the Windows speech synthesizer', false, 'System.Speech did not write the file');
+
+  console.log('D14 thumbnails of nested sequences and motion graphics templates');
+  const redPng = make('red_still.png', ['-f', 'lavfi', '-i', 'color=c=red:s=160x90:d=1', '-frames:v', '1']);
+  // average colour of the rendered tile of a clip (null while there is none)
+  const tileOf = (clipId) => js(`for (let i = 0; i < 100; i++) { const img = [...document.querySelectorAll('.clip')].find((el) => el.dataset.clip === ${J(clipId)})?.querySelector('.thumbs.rendered img');
+      if (img) { await img.decode(); const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data;
+        let r = 0, gg = 0, b = 0, lit = 0; const n = d.length / 4; for (let k = 0; k < d.length; k += 4) { r += d[k]; gg += d[k + 1]; b += d[k + 2]; if (d[k] + d[k + 1] + d[k + 2] > 120) lit++; } return { r: r / n, g: gg / n, b: b / n, lit: lit / n, w: c.width, h: c.height, src: img.src.slice(0, 22) }; }
+      await T.tick(100); } return null;`);
+  r = await js(`T.fresh(160, 90); E.cmds.run('view.thumbs.head'); const m = await T.imp(${J(redPng)}); const [id] = T.place(m, 0, 'V1'); E.store.set({ selection: [id] }); E.cmds.run('clip.nest'); await T.modal(); T.button('OK').click(); await T.tick(150);
+    const c = E.store.getState().sequence.clips.find((x) => x.nestId); window.NEST = c && c.id; return { nest: !!c };`);
+  ok('a nested sequence clip is on the timeline', r.nest, J(r));
+  r = await tileOf(await js('return NEST;'));
+  ok('the nested clip shows a real picture of its contents (red), not an icon', r && r.r > 180 && r.g < 60 && r.b < 60 && /^data:image\/jpeg/.test(r.src), J(r));
+  r = await js(`const s = E.store.getState(); const sub = s.sequence.clips.find((x) => x.id === NEST).nestId; const main = s.sequence.id;
+    E.store.switchSequence(sub); const inner = E.store.getState().sequence.clips[0].id; E.store.edit('Disable', ({ seq }) => { seq.clips.find((x) => x.id === inner).enabled = false; }); E.store.switchSequence(main); await T.tick(200); return true;`);
+  r = await tileOf(await js('return NEST;'));
+  ok('...an edit inside the nested sequence updates the thumbnail (the disabled red clip -> black)', r && r.r < 30, J(r));
+  const lowerMogrt = out('lower.mogrt');
+  spawnSync('node', [path.join(__dirname, '..', 'mogrt', 'pack_mogrt.mjs'), path.join(__dirname, '..', '..', 'test-assets', 'mogrt', 'lower'), lowerMogrt]);
+  r = await js(`T.fresh(320, 180); const e = await E.mogrtLibrary.installMogrt(${J(lowerMogrt)}); await E.mogrt.addMogrtToTimeline(e.libId, 0); await T.tick(200);
+    const c = E.store.getState().sequence.clips.find((x) => x.mogrt); window.MG = c && c.id; return { ok: !!c, dur: c && c.dur };`);
+  ok('a motion graphics template clip is on the timeline', r.ok, J(r));
+  r = await tileOf(await js('return MG;'));
+  ok('the MOGRT clip shows a rendered frame of the template (lit pixels), not an icon', r && r.lit > 0.01, J(r));
+  r = await js(`E.cmds.run('view.thumbs.headTail'); await T.tick(50); return true;`);
 });

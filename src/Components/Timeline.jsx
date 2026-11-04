@@ -20,7 +20,8 @@ import { applySpeedCurveToClips } from './EffectControls';
 import { VIDEO_FX } from '../Renderers/fx/videoEffects';
 import { AUDIO_FX } from '../Services/audioFx';
 import { bandParams, setBandParam, fracOf, bandValue, addBandKey, removeBandKey, dragBandLine, dragBandKey } from '../Core/clipBands';
-import { thumbSlots, cachedThumb, requestThumb, frameIndex } from '../Services/thumbs';
+import { thumbSlots, cachedThumb, requestThumb, frameIndex, renderedSlots } from '../Services/thumbs';
+import { cachedClipThumb, requestClipThumb, clipThumbKey } from '../Services/clipThumbs';
 import { clipsInBox } from '../Core/marquee';
 import { markerColor, clipMarkers } from '../Core/markers';
 
@@ -68,6 +69,30 @@ function ParamBand({ clip, pps, h, def }) {
   );
 }
 
+/** Nested sequence / MOGRT clip: tiles composited from the clip itself (src/Services/clipThumbs.js). */
+function RenderedThumbs({ clip, pps, h, mode, fps }) {
+  const seqW = useStore((s) => s.sequence.width), seqH = useStore((s) => s.sequence.height);
+  // re-render when the nested sequence changes (its object is part of the tile keys)
+  useStore((s) => (clip.nestId ? (s.sequence.id === clip.nestId ? s.sequence : s.seqs?.[clip.nestId]) : null));
+  const [urls, setUrls] = useState({});
+  const th = Math.max(8, h - 8);
+  const slots = renderedSlots(clip, { W: clip.dur * pps, tw: th * ((seqW || 16) / (seqH || 9)), pps, mode, fps });
+  const keys = slots.map((s) => clipThumbKey(clip, s.t, th));
+  const sig = keys.join(',');
+  useEffect(() => {
+    let dead = false;
+    slots.forEach((s, i) => {
+      const k = keys[i]; if (urls[k]) return;
+      const c = cachedClipThumb(clip, s.t, th);
+      if (c) setUrls((u) => ({ ...u, [k]: c }));
+      else requestClipThumb(clip, s.t, th).then((u) => { if (!dead && u) setUrls((x) => ({ ...x, [k]: u })); });
+    });
+    return () => { dead = true; };
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+  const icon = clip.nestId ? '🎬' : '✦';
+  return <div className="thumbs rendered">{slots.map((s, i) => { const u = urls[keys[i]]; return u ? <img key={i} src={u} style={{ left: s.x, width: s.w, height: th }} alt="" /> : null; })}{!slots.some((s, i) => urls[keys[i]]) && <span className="thumb-icon">{icon}</span>}</div>;
+}
+
 /** Video thumbnails on a clip (View > Video Thumbnails), decoded by FFmpeg at the clip's real source frames. */
 function Thumbs({ clip, pps, h, mode, fps }) {
   const media = useStore((s) => s.media.find((m) => m.id === clip.mediaId));
@@ -90,6 +115,7 @@ function Thumbs({ clip, pps, h, mode, fps }) {
     return () => { dead = true; };
   }, [sig]);
   if (mode === 'none') return null;
+  if ((clip.nestId || clip.mogrt) && !clip.asAudio) return <RenderedThumbs clip={clip} pps={pps} h={h} mode={mode} fps={fps} />;
   if (!ok) { const icon = clip.nestId ? '🎬' : clip.mogrt ? '✦' : clip.graphic ? 'T' : null; return icon ? <span className="thumb-icon">{icon}</span> : null; }
   return <div className="thumbs">{slots.map((s, i) => { const u = urls[keyOf(s)]; return u ? <img key={i} src={u} style={{ left: s.x, width: s.w, height: th }} alt="" /> : null; })}</div>;
 }

@@ -444,8 +444,19 @@ async function renderExport(opts, onProgress, cancel) {
 }
 export const wavBytesFromPcm = (pcm) => wavBytes(pcm);
 /** Render one sequence frame exactly like Export (same seeking and compositor). Returns ImageData (top row first). */
-export async function renderFrame(t, w, h) {
-  const state = structuredClone({ ...getState(), log: [], dialog: null });
+export async function renderFrame(t, w, h) { return renderStateFrame(structuredClone({ ...getState(), log: [], dialog: null }), t, w, h); }
+/**
+ * One clip alone at sequence time t (w x h, the sequence frame): timeline thumbnails of nested sequences and motion
+ * graphics templates, which have no media file to decode. Its own effects, Motion and opacity apply; the clips around it
+ * and transitions do not. null when the clip is not in the active sequence.
+ */
+export async function renderClipFrame(clipId, t, w, h) {
+  const st = getState(); const seq = st.sequence; const c = seq.clips.find((x) => x.id === clipId); if (!c) return null;
+  const tr = seq.tracks.find((x) => x.id === c.track) || { id: c.track, kind: 'video' };
+  const one = { ...seq, clips: [c], transitions: [], tracks: [{ ...tr, hidden: false, muted: true, solo: false }] };
+  return renderStateFrame(structuredClone({ ...st, sequence: one, mcView: false, log: [], dialog: null }), t, w, h);
+}
+async function renderStateFrame(state, t, w, h) {
   const canvas = document.createElement('canvas'); const comp = new Compositor(canvas); comp.resize(w, h);
   const gl = comp.gl; const px = new Uint8Array(w * h * 4);
   lockPlayback(true);

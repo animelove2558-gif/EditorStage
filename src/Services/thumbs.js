@@ -83,3 +83,21 @@ async function pump() {
   finally { running--; pump(); }
 }
 export const thumbCacheSize = () => cache.size;
+
+/**
+ * Tiles of a clip that is rendered rather than decoded (nested sequence, motion graphics template): [{ x, w, t }] with t
+ * the sequence time to render. Same layout as thumbSlots, at most `max` tiles (each render is a full composite). A MOGRT's
+ * head tile shows the frame 1 s in (or the middle of a shorter clip), when its text has animated in.
+ */
+export function renderedSlots(clip, { W, tw, pps, mode, fps = 30, max = 12 }) {
+  if (mode === 'none' || !(W > 2) || !(tw > 1)) return [];
+  const last = clip.start + Math.max(0, clip.dur - 1 / fps);
+  const at = (x) => Math.min(last, clip.start + Math.max(0, x / pps));
+  const head = clip.mogrt ? Math.min(last, clip.start + Math.min(1, clip.dur / 2)) : clip.start;
+  if (mode === 'head' || (mode === 'headTail' && W < tw * 2)) return [{ x: 0, w: Math.min(W, tw), t: head }];
+  if (mode === 'headTail') return [{ x: 0, w: tw, t: head }, { x: W - tw, w: tw, t: last }];
+  const n = Math.min(max, Math.ceil(W / tw)); const step = Math.max(tw, W / n); const out = [];
+  for (let i = 0; i < n; i++) { const x = i * step; out.push({ x, w: Math.min(step, W - x), t: i === 0 ? head : at(x) }); }
+  return out;
+}
+export const renderBucket = bucket;
