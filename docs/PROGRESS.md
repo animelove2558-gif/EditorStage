@@ -29,7 +29,7 @@ e2e ใช้โฟลเดอร์ userData ชั่วคราว ไม�
 | 5d | clip.makeSubclip / editSubclip | ✅ | สร้างจาก In/Out ของ Source Monitor, แก้ช่วง, Convert to Master Clip. subclip แสดง ✂ ใน Project panel |
 | 5e | Export EDL / FCPXML / Premiere XML (+Selection) | ✅ | `src/Services/interchange/` (JS ล้วน ไม่มี dependency): CMX3600 (DF/NDF, dissolve, M2 speed, หลาย video track → แยกไฟล์), FCPXML 1.9, xmeml v5 (Premiere/FCP7: link, time remap, transition, marker). Export Selection = Premiere XML เฉพาะ clip ที่เลือก + คู่ที่ link |
 | 5f | Import XML / EDL / FCPXML | ✅ | File > Import Sequence และ File > Import (เลือกไฟล์ได้เลย). จับคู่ media ตาม path, import ไฟล์ที่มีอยู่, ที่ไม่มีสร้างเป็น offline. e2e: export → import กลับได้ clip ตรงกันทั้ง 3 รูปแบบ |
-| 5g | AAF / OMF | ✅ AAF (Phase C2) / OMF ไม่ทำ | AAF เขียนเองด้วย JS ล้วน (ดู Phase C2) — File > Export > AAF (Embedded Audio)... ; OMF ไม่ทำเพราะ AAF แทนได้ในทุก DAW ปัจจุบัน |
+| 5g | AAF / OMF | ✅ AAF (Phase C2, Phase 9: volume / pan / crossfade / 5.1 / video reference) / OMF ไม่ทำ | AAF เขียนเองด้วย JS ล้วน (ดู Phase C2) — File > Export > AAF (Embedded Audio)... ; OMF ไม่ทำเพราะ AAF แทนได้ในทุก DAW ปัจจุบัน |
 | 5h | Workspaces: All Panels, Essential Graphics, Learning | ✅ | All Panels = ทุก panel ที่มองเห็นได้. Learning มี Learn panel (บทเรียน offline). e2e โหลดทุก workspace |
 | 6 | scripts/check_commands.mjs | ✅ | ตรวจ id จากเมนู, `run('…')` ทั้ง src, shortcuts และว่าทุก shortcut ที่แสดงในเมนูมี key binding จริง → **0 missing, 0 stubs** |
 
@@ -81,7 +81,7 @@ e2e ใช้โฟลเดอร์ userData ชั่วคราว ไม�
 - แก้จุด mask ใน Effect Controls เคยลบ keyframe ทั้งหมด → ตอนนี้เขียน key ที่ playhead เมื่อ path เป็นแบบ animate
 
 ### ข้อจำกัดที่รู้อยู่ (Phase 2)
-- Optical Flow ใน Time Interpolation ยังซ่อนไว้ (ต้องใช้ RIFE จาก Phase 4)
+- Optical Flow ใน Time Interpolation ยังซ่อนไว้ (ต้องใช้ RIFE จาก Phase 4) — (Phase 9: เปิดใช้แล้ว แบบ block matching บน GPU)
 - Frame Blending แสดงเฉพาะตอนหยุดและตอน export (ตอนเล่นแสดงเฟรมธรรมดาเพื่อความลื่น)
 - Reverse ตอนเล่น preview ต้อง seek ทุกเฟรม อาจกระตุกกับไฟล์ long-GOP (export ถูกต้องทุกเฟรม)
 - Ellipse mask track ได้ตำแหน่งและขนาด แต่ไม่หมุน (mask วงรีไม่มีพารามิเตอร์ rotation) — ใช้ polygon/free-draw ถ้าต้องการหมุนตาม
@@ -109,7 +109,7 @@ e2e ใช้โฟลเดอร์ userData ชั่วคราว ไม�
 - caption ภาษาไทยที่ไม่มีช่องว่างไม่เคยตัดบรรทัดเลย (ยาวล้นจอ) → ใช้ word segmentation
 
 ### ข้อจำกัด (Phase 3)
-- Remove Background ใช้ model สำหรับ "คน" (selfie) — วัตถุอื่นต้องใช้ Ultra Key / Mask
+- Remove Background ใช้ model สำหรับ "คน" (selfie) — วัตถุอื่นต้องใช้ Ultra Key / Mask — (Phase 9: เพิ่ม Animals / Vehicles / Any Object / Object at Point)
 - อีโมจิอัตโนมัติใช้พจนานุกรมคำสำคัญ (~25 กลุ่ม) ไม่ใช้ AI
 
 ## Phase 4 — เหนือกว่า Premiere Pro และ CapCut — ✅ (ขอบเขตที่ผู้ใช้เลือก)
@@ -130,7 +130,7 @@ e2e ใช้โฟลเดอร์ userData ชั่วคราว ไม�
 ### ข้อจำกัด (Phase 4)
 - "เสียงหัวเราะ" วัดจากช่วงที่ดังผิดปกติ (หัวเราะ ตะโกน ปรบมือ) ไม่ได้ใช้ model จำแนกเสียง
 - Long-to-Shorts ใช้ transcript ที่มีอยู่ (ปุ่ม Transcribe Speech ในแท็บ ใช้ Whisper offline) — ถ้าไม่มี transcript ให้คะแนนจากเสียงและภาพเท่านั้น และไม่สร้าง caption
-- Smart B-Roll จับคู่ด้วยคำ (ชื่อไฟล์ / คำพูด / 80 class ของ detector + พจนานุกรม) ไม่ได้ใช้ embedding เชิงความหมาย — ไฟล์ชื่อ IMG_0001 ที่ภาพไม่มีวัตถุใน 80 class จะไม่ถูกแนะนำ
+- Smart B-Roll จับคู่ด้วยคำ (ชื่อไฟล์ / คำพูด / 80 class ของ detector + พจนานุกรม) ไม่ได้ใช้ embedding เชิงความหมาย — ไฟล์ชื่อ IMG_0001 ที่ภาพไม่มีวัตถุใน 80 class จะไม่ถูกแนะนำ — (Phase 9: เพิ่มการจับคู่ตามความหมายด้วย model pack ที่ดาวน์โหลดได้)
 - การสร้าง Short และวาง B-roll undo ได้ แต่การสลับ sequence (เปิด Short) ล้าง undo history (พฤติกรรมเดิมของโปรแกรม)
 
 ---
@@ -413,6 +413,60 @@ File > Export > **AAF (Embedded Audio)...** (`file.exportAAF`) เขียน A
 - `scripts/test_store.mjs`, `test_jobs.mjs` (Node แทน FFmpeg), `test_versions.mjs` (โฟลเดอร์จริงแทน main process), `test_guard.mjs`, เพิ่มใน `test_keys.mjs` / `test_tracks.mjs`
 - `scripts/e2e/phase8.cjs` 25/25: ซ่อน V2 แล้ว export/renderFrame เห็น V1, undo/redo/บันทึก hidden, Save/Undo/Redo dirty, In/Out + projectId ในไฟล์, Save ล้มเหลว, เปิดไฟล์เสีย + เปิด revision, encoder ตายแล้ว end ไม่ค้าง, export ที่ยกเลิกไม่เหลือไฟล์, ไฟล์เดิมไม่ถูกทับ, guard (.bat, ลบไฟล์, เปิด .exe, FFmpeg เขียน .cmd, AudioStage path), window.open / navigation, NumInput, Space กับ checkbox
 
+## Phase 9 — ข้อที่ค้างจากการตรวจ 2–3 พ.ย. 2026 (E15 เต็ม, D2–D4, D6–D11, D13–D15) — ✅ เวอร์ชัน 3.2.0
+
+commit แยกทีละข้อ `[Phase 9.1]` … `[Phase 9.13]`. ผลทดสอบล่าสุดอยู่ท้ายหัวข้อนี้
+
+### 9.1 E15 — guard ฝั่ง main ครบทั้งอ่านและเขียน
+- `electron/fileGuard.js` (เขียนใหม่): **อ่าน** ได้เฉพาะไฟล์สื่อ, ไฟล์/โฟลเดอร์ที่ผู้ใช้เลือกใน dialog, ลากวาง, ข้อมูลของโปรแกรมเอง (userData / temp / ไฟล์ที่เขียนในรอบนี้), สิ่งที่โปรเจกต์ที่เปิดอ้างถึง (LUT, caption, scratch disk), โฟลเดอร์ Proxies; `es-media` ตอบ 403 ถ้าอ่านไม่ได้
+- **เขียน/สร้างโฟลเดอร์/ลบ** ได้เฉพาะ path ที่เลือกใน dialog, โปรเจกต์ใน Recent (`userData/recent-projects.json` เก็บฝั่ง main), โฟลเดอร์ของโปรเจกต์ (`Captured`, `AudioStage Edits`, `<name>.history`), `<media>/Proxies`, userData, temp
+- FFmpeg: input ต้องอ่านได้, output ต้องเขียนได้, ห้าม protocol / lavfi ที่อ่านไฟล์ / concat list ที่ชี้ไฟล์อื่น
+- Archive, AudioStage, mkdir, extract audio, probe, MOGRT install ผ่าน guard เดียวกัน
+
+### 9.2 D13 — History แยกต่อ sequence
+- แต่ละ sequence มี undo / redo stack ของตัวเอง (สลับ sequence แล้วยังอยู่); step จำว่าทำใน sequence ไหน, แก้ media item ใด (ตาม id) และ sequence อื่นใด → undo ใน sequence หนึ่งไม่ย้อนงานที่ทำทีหลังใน sequence อื่น
+- สถานะ Save เก็บแยกต่อ sequence และต่อ media item
+
+### 9.3–9.8 D2, D3, D4, D6, D7, D8
+- **D2 Optical Flow** (Clip > Time Interpolation): ประมาณการเคลื่อนที่ระหว่างสองเฟรมต้นทางบน GPU (block matching บน luma grid เล็ก + smoothing) แล้วเลื่อนทั้งสองเฟรมก่อนผสม ใช้ทั้ง preview ตอนหยุดและ export; Cancel export รอ FFmpeg ปิดก่อนลบไฟล์ .part
+- **D3 Export Queue** render ใน hidden window (`electron/renderWindow.js`, `Services/renderHost.js`) มี media element + compositor ของตัวเอง → Program Monitor / เล่น / ตัดต่อในหน้าหลักยังใช้ได้; ถ้า render window เปิดไม่ได้จะกลับไป render ในหน้าหลัก
+- **D4 Source patching**: คอลัมน์ source บนหัว track บอกว่าภาพ (V1) และเสียง (A1) ของ Source ลง track ไหนตอน Insert / Overwrite; คลิกช่องว่างเพื่อ patch, คลิกตัวบอกเพื่อไม่ใส่ส่วนนั้น; เก็บต่อ sequence
+- **D6 Ellipse mask** มี Rotation (keyframe ได้) วาดในหน่วยสี่เหลี่ยมจัตุรัส → รูปไม่เพี้ยนทุกขนาดเฟรม; tracking โหมด Position & Rotation / Position, Scale & Rotation ใส่ keyframe ให้
+- **D7 Color Match** เขียนเป็น RGB Curves ได้ (histogram matching ต่อ channel แล้ว refit saturation + ผิว) นอกจาก Basic Correction + Wheels; Face Detection ใช้ MediaPipe Face Landmarker หาใบหน้าในทั้งสองเฟรม (ไม่เจอ = ใช้ตัวจำแนกสีผิวเดิม)
+- **D8 Remove Background** เลือก Subject: People (Selfie Segmenter), Animals, Vehicles, Any Object (DeepLab v3, 20 class), Object at Point (MediaPipe Interactive Segmenter); mask cache แยกต่อ subject, export รอ mask เดียวกัน; ทั้งสองโมเดล Apache-2.0 อยู่ในรายการ license
+
+### 9.9 D9 — Smart B-Roll ตามความหมาย
+- model pack ดาวน์โหลดเมื่อผู้ใช้กด **Download** เท่านั้น (`electron/models.js`): main process โหลดจาก revision ที่ตรึงไว้ ตรวจขนาด + SHA-256 / Git SHA-1 ทุกไฟล์ก่อนย้ายเข้า `userData/models`; หน้าเว็บยังออกเน็ตไม่ได้เหมือนเดิม
+- paraphrase-multilingual-MiniLM-L12-v2 (Apache-2.0, ~135 MB): เวกเตอร์ของไฟล์ (ชื่อ + วัตถุที่เห็น + เสียงพูด) เทียบกับประโยคใน transcript (cosine) เพิ่มคะแนนจากการจับคู่คำ — ประโยคไทย "ทะเลสวยมาก คลื่นซัดเข้าหาดทราย" เจอ `beach_sunset.png` โดยไม่มีคำร่วม
+- MediaPipe ส่งสถิติการใช้งานไป googleapis ทุกนาที → ตอบในเครื่อง (ไม่ออกเน็ต ไม่มี console error)
+
+### 9.10 D15 — Whisper Small / Medium
+- รายการโมเดล: Base (มากับโปรแกรม), Small (~250 MB), Medium (~990 MB) แบบดาวน์โหลด ใช้ encoder/decoder 8-bit; ปุ่ม Download + ความคืบหน้าข้างรายการ (Auto-Subtitles, Text panel); ยังไม่ดาวน์โหลด = แจ้งชัด ไม่ค้าง
+- ช้ากว่า Base มากบน CPU (WASM, 1 thread): เครื่องนี้ Small ใช้ ~3 นาทีกับเสียง 6 วินาทีรวมเวลาโหลดโมเดล (ลอง encoder fp32 แล้วช้ากว่า จึงใช้ q8)
+
+### 9.11 D14 — Thumbnail ของ nested sequence / MOGRT
+- render คลิปนั้นตัวเดียวด้วย compositor (`exporter.renderClipFrame`) ทีละงาน เฉพาะตอนไม่ได้เล่น, cache ตาม object ของคลิป/sequence ข้างใน → แก้ใน nest แล้วรูปเปลี่ยน; MOGRT ใช้เฟรมที่ 1 วินาที
+
+### 9.12 D10 — AAF
+- Volume keyframe + clip gain + Panner (เป็น balance L/R) → Mono Audio Gain (Amplitude constant/varying); crossfade → Transition (Mono Audio Dissolve); track ที่มีเสียง 5.1 แยกเป็น 6 mono track (L R C LFE Ls Rs); video track → video reference (CDCI + NetworkLocator ชี้ไฟล์เดิม ไม่ฝัง)
+- ตรวจว่าทุก class / property id ในไฟล์มีใน MetaDictionary ของไฟล์เอง; ยังไม่ได้ทดสอบเปิดใน Pro Tools / Resolve / Premiere (ไม่มีในเครื่อง) และไม่ได้อ่านกลับด้วย pyaaf2 (ข้อกำหนดรอบนี้ห้ามใช้ python)
+
+### 9.13 D11 — Import พร้อม effect / สี / keyframe
+- EDL: `* ASC_SOP` / `* ASC_SAT` → ASC CDL; FCPXML: adjust-transform / blend / volume / crop, Gaussian Blur พร้อม keyframe; FCP7/Premiere XML: Basic Motion, Opacity, Audio Levels, Crop, Gaussian Blur พร้อม keyframe; effect ที่แปลงไม่ได้ (เช่น Color Board, Three-Way Color Corrector) แจ้งชื่อในข้อความหลัง import
+
+#### ข้อจำกัด (Phase 9)
+- OMF ไม่ได้ทำ: ไม่มีโปรแกรม/ตัวตรวจที่อ่าน OMF ในเครื่องนี้ จึงยืนยันไม่ได้ว่าไฟล์ถูกต้อง (AAF รองรับใน DAW หลักทั้งหมดแล้ว)
+- AAF: ไม่ส่ง audio effect (EQ, compressor), กราฟ crossfade แบบ constant power ไปเป็น dissolve ธรรมดา, คลิปวิดีโอที่เปลี่ยนความเร็วไม่อยู่ใน video reference
+- FCPXML Color Board / Color Wheels / Curves ใช้ค่าภายในของ Final Cut ที่ไม่มีเอกสาร จึงไม่แปลง (แจ้งชื่อ)
+- Whisper Small / Medium ช้าบน CPU (ไม่มี WebGPU path ในรอบนี้)
+- ยังไม่ได้ code-sign ตัวติดตั้ง (ไม่มี certificate)
+
+#### การทดสอบ (Phase 9)
+- ใหม่/เพิ่ม: `test_guard` 62, `test_store` 59, `test_tracks` 67, `test_jobs` 16, `test_color` 14, `test_models` 44 (ใหม่), `test_aaf` 49, `test_interchange` 54, `test_clipview` 33
+- `scripts/e2e/phase9.cjs`: E15, D13, D2, D3, D4, D6, D7, D8, D9 (ดาวน์โหลดจริง), D15 (ดาวน์โหลด Whisper Small จริง + ถอดเสียงพูดสังเคราะห์), D14, D10, D11
+- ผลล่าสุด (4 พ.ย. 2026): `npm test` 668/668 (20 ชุด), check_commands 0 missing / 0 stubs, e2e ทุก phase ผ่าน (phase9 66/66; phase5 53/53 หลังปรับการตรวจ thumbnail ของ nested clip ให้ตรงกับ D14)
+- เวอร์ชัน 3.2.0: `release/EditorStage Setup 3.2.0.exe` 218 MB; smoke test ตัว packaged ผ่าน (MediaPipe, Whisper Base, รายการ model pack, embed worker, DeepLab / Magic Touch)
+
 ## รายงานสรุป — Definition of Done
 
 | เกณฑ์ | ผล |
@@ -429,14 +483,14 @@ File > Export > **AAF (Embedded Audio)...** (`file.exportAAF`) เขียน A
 
 | ความสามารถ | EditorStage | Premiere Pro | CapCut Desktop |
 |-----------|:-----------:|:------------:|:--------------:|
-| ทำงาน offline 100% / ฟรี | ✅ / ✅ | 🟡 (ต้อง login, เสียเงิน) | 🟡 (AI หลายตัวต้องออนไลน์, บางส่วนเสียเงิน) |
+| ทำงาน offline 100% / ฟรี | ✅ / ✅ (model pack เสริมดาวน์โหลดเมื่อผู้ใช้กดเท่านั้น) | 🟡 (ต้อง login, เสียเงิน) | 🟡 (AI หลายตัวต้องออนไลน์, บางส่วนเสียเงิน) |
 | Keyframe ease + Graph Editor | ✅ | ✅ | 🟡 (ease preset, ไม่มี graph) |
 | Time Remapping / Speed Curve / Frame Blending | ✅ | ✅ (+ Optical Flow) | ✅ speed curve (+ Optical Flow) |
-| Optical Flow / AI Frame Interpolation | ❌ (ตัดออก) | ✅ | ✅ |
+| Optical Flow / AI Frame Interpolation | ✅ Optical Flow บน GPU (Phase 9, ไม่ใช่ AI) | ✅ | ✅ |
 | Mask Tracking / Point Tracker | ✅ | ✅ | 🟡 |
 | Lumetri-style color, LUT, Color Match, Scopes | ✅ | ✅ | 🟡 (filters/adjust, ไม่มี scopes) |
 | Filters สำเร็จรูป + hover preview | ✅ (35) | 🟡 (Creative Looks) | ✅ (มากกว่า, ออนไลน์) |
-| Remove Background (คน) | ✅ offline | ❌ (ต้องใช้ Roto Brush ใน After Effects) | ✅ |
+| Remove Background (คน / สัตว์ / ยานพาหนะ / วัตถุ / จุดที่คลิก) | ✅ offline | ❌ (ต้องใช้ Roto Brush ใน After Effects) | ✅ |
 | Canvas / Background Fill | ✅ | ❌ | ✅ |
 | Auto Captions + ตัดบรรทัดภาษาไทยไม่ตัดกลางคำ | ✅ offline | ✅ (Speech to Text, ภาษาไทยจำกัด) | ✅ (ออนไลน์) |
 | Caption presets, keyword emphasis, emoji, SRT/VTT/ASS | ✅ | 🟡 (SRT, ไม่มี emoji อัตโนมัติ) | ✅ (ไม่มี ASS) |
@@ -445,10 +499,10 @@ File > Export > **AAF (Embedded Audio)...** (`file.exportAAF`) เขียน A
 | Auto Ducking (keyframe) | ✅ | ✅ | 🟡 |
 | Voice Changer | ✅ (8) | ❌ | ✅ (มากกว่า) |
 | Long-to-Shorts พร้อมปรับน้ำหนักคะแนนได้ | ✅ offline | ❌ | 🟡 (Long video to shorts, ออนไลน์ ปรับคะแนนไม่ได้) |
-| Smart B-Roll จาก transcript (ไทย/อังกฤษ) | ✅ ใช้สื่อในโปรเจกต์ | ❌ | 🟡 (stock ออนไลน์) |
+| Smart B-Roll จาก transcript (ไทย/อังกฤษ) | ✅ ใช้สื่อในโปรเจกต์ (+ จับคู่ตามความหมายด้วย model pack) | ❌ | 🟡 (stock ออนไลน์) |
 | Project Health Check ก่อน Export | ✅ (6 ด้าน + one-click fix) | 🟡 (เตือน offline media) | ❌ |
 | EDL / FCPXML / Premiere XML | ✅ | ✅ (+ AAF/OMF) | ❌ |
-| AAF / OMF | ✅ AAF เสียงฝังในไฟล์ (ไม่มี OMF) | ✅ | ❌ |
+| AAF / OMF | ✅ AAF เสียงฝังในไฟล์ + volume / pan / crossfade / 5.1 / video reference (ไม่มี OMF) | ✅ | ❌ |
 | HW encode, AV1, ProRes 4444 alpha, loudness normalize, Smart Render, Export Queue | ✅ | ✅ (Queue ผ่าน Media Encoder) | 🟡 (HW encode, ไม่มี ProRes alpha/queue) |
 | Proxy / Relink | ✅ | ✅ | 🟡 |
 | Stickers, Templates, Text-to-Speech, Audio library, Beat Sync | ❌ (ตัดออก) | 🟡 | ✅ (ออนไลน์) |

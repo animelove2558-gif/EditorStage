@@ -20,13 +20,13 @@ Effects flagged `unsupported` in the Effects panel are not implemented; no video
 
 **Effects rebuilt to follow Premiere / After Effects** (`src/Renderers/fx/premiereFx.js`): Lighting Effects (5 lights, bump layer), Compound Blur / Blend / Calculations / Difference Matte / Texturize with a layer input (another video track), Arithmetic (13 integer operators), Equalize (real histogram), Paint Bucket (connected flood fill), Turbulent Displace, Lightning (branches), the VR effects on equirectangular frames (wrap-around, Frame Layout), Bevel Alpha / Bevel Edges, Radial Shadow, Brush Strokes, Roughen Edges. Audio: FFT Filter (minimum-phase FIR drawn on FFT bins), Pitch Shifter / Pitch and Time (phase vocoder, Precision, Formant Preserve); export compensates the latency of pitch / denoise effects so sound stays in sync.
 
-**AAF export** (File > Export > AAF (Embedded Audio)...): the audio tracks go to a DAW as an AAF file with embedded 48 kHz / 24-bit PCM. Each track is split into L/R mono tracks, plain clips carry 1 s handles, and retimed clips carry their rendered audio. The AAF is written in pure JS (`src/Services/interchange/cfb.js`, `aaf.js`) and validated with pyaaf2. It has not yet been tested in Pro Tools or Resolve.
+**AAF export** (File > Export > AAF (Embedded Audio)...): the audio tracks go to a DAW as an AAF file with embedded 48 kHz / 24-bit PCM. Each track is split into L/R mono tracks (5.1 tracks into six), plain clips carry 1 s handles, and retimed clips carry their rendered audio. Volume keyframes, clip gain and pan (as L/R balance) go as Mono Audio Gain, crossfades as Mono Audio Dissolve transitions, and video tracks as a video reference that points at the original files. The AAF is written in pure JS (`src/Services/interchange/cfb.js`, `aaf.js`); the base structure was validated with pyaaf2, and every class / property in the file is checked against the file's own MetaDictionary. It has not yet been tested in Pro Tools or Resolve.
 
 **FFmpeg license choice:** Preferences > FFmpeg (or the `EDITORSTAGE_FFMPEG` variable, or a build-time `ffmpeg.json`) chooses the FFmpeg binary. With an LGPL build that lacks libx264 / libx265, H.264 / HEVC export, preview renders, proxies and import conversion switch to hardware, Media Foundation, OpenH264, VideoToolbox or VP9 encoders. See `THIRD_PARTY_LICENSES.md`.
 
 ## Smart Tools & workflow (menu **Smart Tools**, Window > Smart Tools / Cold Archive Manager / Version History)
 - **Auto-Cut Silence & Dead Air** - RMS threshold (dB), minimum silence, padding; preview, then ripple delete on all tracks (`src/Services/ai/silence.js`).
-- **Auto-Subtitles** - offline Whisper (transformers.js + ONNX WASM, `src/Services/ai/stt*.js`), 99 languages / translate to English, word timings, caption track with Plain / Karaoke / Word highlight / Word-by-word / Pop styles, SRT export. Model: `node scripts/fetch_models.mjs base` (bundled) or `small`.
+- **Auto-Subtitles** - offline Whisper (transformers.js + ONNX WASM, `src/Services/ai/stt*.js`), 99 languages / translate to English, word timings, caption track with Plain / Karaoke / Word highlight / Word-by-word / Pop styles, SRT export. Model: Base (bundled, `node scripts/fetch_models.mjs base`), or Small / Medium (better Thai, slower), downloaded on request from the model list.
 - **Separate Speakers** - local diarization (VAD + MFCC/pitch voice prints + clustering), one audio track per speaker (`ai/diarize.js`).
 - **Smart Auto-Reframe** - copies the sequence to 9:16 / 1:1 / 4:5 and keeps the tracked person/face/object in frame with Motion keyframes (`ai/reframe.js`).
 - **Edit in AudioStage** - Edit menu / clip right-click: renders the clip to WAV 48 kHz 24-bit in "AudioStage Edits", opens AudioStage, reloads the clip when AudioStage saves (Ctrl+S). Needs the AudioStage version with `--editorstage-edit=` support.
@@ -40,7 +40,7 @@ Everything runs offline; third-party code and models are listed in THIRD_PARTY_L
 
 **Editing & effects**
 - Keyframe interpolation (Linear / Hold / Ease In / Ease Out / Ease In-Out / Bezier) and a Graph Editor (value / speed graphs, ease presets).
-- Speed / Duration, Reverse, Time Remapping, speed curves, Maintain Audio Pitch, Frame Blending — one time model for preview, audio and export.
+- Speed / Duration, Reverse, Time Remapping, speed curves, Maintain Audio Pitch, Frame Blending, Optical Flow (GPU motion estimation) — one time model for preview, audio and export.
 - Frame Hold (Add / Insert Frame Hold Segment), Export Frame (Ctrl+Shift+E), subclips (Make / Edit Subclip, Convert to Master Clip).
 - File > New: Adjustment Layer, Bars and Tone, Black Video, Color Matte, Universal Counting Leader, Transparent Video.
 - Mask Tracking and Point Tracker; Scene Edit Detection; Text-Based Editing (Text panel: delete / move words, remove fillers).
@@ -51,7 +51,7 @@ Everything runs offline; third-party code and models are listed in THIRD_PARTY_L
 - Drag modifiers: Ctrl = Insert, Ctrl+Alt = Rearrange (swap clip order, no gap), Alt = Duplicate (linked copies); Ctrl on a drop from the Project panel = Insert. A badge / insert line shows the mode; one undo step.
 - Nudge: Alt+↑ / Alt+↓ (one track), Alt+← / Alt+→ (1 frame), Alt+Shift+← / → (5 frames) — Clip > Nudge.
 - Tracks: drag headers or Move Track Up / Down to reorder (layer order in preview and export), Rename, Add Track Above / Below, Delete Track, Delete Empty Tracks, adjustable track height (drag the header edge, Expand / Minimize All Tracks), track targeting buttons (V1 / A1) used by Insert, Overwrite, Paste, Match Frame and Add Edit.
-- Video thumbnails on clips (View > Video Thumbnails: None / Head / Head and Tail / Continuous) decoded by FFmpeg at the real source frames (speed, reverse, time remapping, frame hold).
+- Video thumbnails on clips (View > Video Thumbnails: None / Head / Head and Tail / Continuous) decoded by FFmpeg at the real source frames (speed, reverse, time remapping, frame hold); nested sequences and MOGRT clips show rendered frames of their contents.
 - Clip keyframe rubber bands (right-click > Show Clip Keyframes): Volume level, Opacity, Motion and effect sliders — drag, Ctrl+click to add, Alt+click to delete.
 
 **Color & audio**
@@ -59,10 +59,10 @@ Everything runs offline; third-party code and models are listed in THIRD_PARTY_L
 - Essential Sound: Auto Ducking writes Volume keyframes; Voice Changer effect (8 voices).
 
 **Create panel (CapCut-style)**
-- Filters (35 looks + intensity, hover to preview), Canvas / Background Fill (blur / color / image), caption style presets, Voice, Remove Background (MediaPipe Selfie Segmenter).
+- Filters (35 looks + intensity, hover to preview), Canvas / Background Fill (blur / color / image), caption style presets, Voice, Remove Background (People: MediaPipe Selfie Segmenter; Animals / Vehicles / Any Object: DeepLab v3; Object at Point: MediaPipe Interactive Segmenter).
 - Auto Captions: Thai line breaking without splitting words, characters per line / lines per caption, keyword emphasis, automatic emoji, SRT / VTT / ASS export, burn-in or sidecar on export.
 - **Shorts (Long-to-Shorts)**: scores moments by speech, energy, laughter / loud bursts, scene changes and hook words; adjustable weights and ranges; creates 9:16 sequences with Auto-Reframe, captions and silences cut.
-- **B-Roll (Smart B-Roll)**: indexes clips and stills by file name, transcript and detected objects (Thai / English vocabulary), suggests cutaways per sentence and places them on the track above.
+- **B-Roll (Smart B-Roll)**: indexes clips and stills by file name, transcript and detected objects (Thai / English vocabulary), suggests cutaways per sentence and places them on the track above. **Match by meaning** (optional download, multilingual sentence model) also matches sentences to media without shared words.
 
 **Effects library & presets (Phase 6E)**
 - 228 video effects, 162 video transitions (adjustable direction / softness / color), 96 audio effects, 12 audio transitions. Every one is written for EditorStage: GLSL on the GPU, Web Audio for sound.
@@ -80,7 +80,7 @@ Everything runs offline; third-party code and models are listed in THIRD_PARTY_L
 - **Remix** (Remix Tool ♫, Clip > Remix..., Essential Sound > Music > Duration): re-edits music to a target length by cutting on matching beats — intro and ending kept, no speed / pitch change, equal-power crossfades, Segments / Variations / Crossfade settings. Analysis runs offline once per file (cached by content in userData/remix-cache). Sound effects / audio without a steady beat are refused with a message. XML / FCPXML / EDL export a remix as one clip per segment with crossfades.
 
 **Interchange & export**
-- Export / import EDL (CMX3600), FCPXML 1.9, Premiere XML (xmeml v5).
+- Export / import EDL (CMX3600), FCPXML 1.9, Premiere XML (xmeml v5). Import brings ASC CDL (EDL), motion / opacity / crop / volume, Gaussian Blur and their keyframes; effects it cannot convert are named after import.
 - Export dialog: platform presets, H.264 / HEVC (incl. 10-bit) / AV1 / ProRes 422 HQ / ProRes 4444 with alpha / AAC, hardware encoders detected by a test encode (NVENC / Quick Sync / AMF), Source Scaling (fit / fill / stretch), loudness normalization (two-pass loudnorm, true peak), chapters from markers, Smart Render (stream copy when nothing changed), Export Queue.
 - Project Health Check (File > Export): offline media, missing fonts, black gaps, clipping, loudness off target, captions / titles outside action-safe — with go-to and one-click fixes.
 

@@ -28,6 +28,18 @@ Versions are the ones installed in `node_modules`. The license was read from eac
 | Whisper base (ONNX, timestamped) | MIT (OpenAI Whisper weights) | `onnx-community/whisper-base_timestamped`, fetched by `scripts/fetch_models.mjs` |
 | MediaPipe Face Landmarker (`face_landmarker.task`) | Apache-2.0 (per its MediaPipe model card) | Google MediaPipe |
 | EfficientDet-Lite0 (`efficientdet_lite0.tflite`) | Apache-2.0 | Google MediaPipe / TensorFlow model garden |
+| DeepLab v3 (`deeplab_v3.tflite`) | Apache-2.0 | Remove Background (animals, vehicles, objects); Google MediaPipe model storage |
+| MediaPipe Interactive Segmenter, Magic Touch (`magic_touch.tflite`) | Apache-2.0 | Remove Background (object at a point); Google MediaPipe model storage |
+
+## Models (not shipped; downloaded only when the user clicks Download)
+
+Downloaded by the main process (`electron/models.js`) from Hugging Face at a pinned revision into `userData/models`, each file checked by size and hash. Used unmodified.
+
+| Model | License | Source |
+|---|---|---|
+| Whisper small, ONNX (8-bit encoder / decoder) | MIT (OpenAI Whisper weights) | `onnx-community/whisper-small_timestamped` |
+| Whisper medium, ONNX (8-bit encoder / decoder) | MIT (OpenAI Whisper weights) | `onnx-community/whisper-medium_timestamped` |
+| paraphrase-multilingual-MiniLM-L12-v2, ONNX (8-bit) | Apache-2.0 | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` (from `sentence-transformers`); Smart B-Roll "Match by meaning" |
 
 ## Build-time only (not shipped)
 

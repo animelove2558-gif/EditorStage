@@ -63,20 +63,20 @@
 ## D. ฟีเจอร์ที่ยังขาด (จาก "ข้อจำกัด" ใน `docs/PROGRESS.md`)
 เรียงจากคุ้มที่สุด:
 1. ☑ **Toggle Track Output** (ข้อ A1)
-2. ☐ **Optical Flow / AI frame interpolation** (Time Interpolation ยังซ่อนไว้ — ตารางเทียบ Premiere เป็น ❌)
-3. ☐ Export Queue render แยกจาก Preview (ตอนนี้ Program Monitor ถูกล็อกระหว่าง render) — ใช้ hidden window / worker
-4. ☐ Source patching แบบสองคอลัมน์ (V1 ต้นทาง → Vn ปลายทาง) แบบ Premiere
+2. ☑ **Optical Flow / AI frame interpolation** (Time Interpolation ยังซ่อนไว้ — ตารางเทียบ Premiere เป็น ❌)
+3. ☑ Export Queue render แยกจาก Preview (ตอนนี้ Program Monitor ถูกล็อกระหว่าง render) — ใช้ hidden window / worker
+4. ☑ Source patching แบบสองคอลัมน์ (V1 ต้นทาง → Vn ปลายทาง) แบบ Premiere
 5. ☑ Remix ที่ยาวขึ้นไม่ควรเขียนทับคลิปถัดไป (ให้ ripple หรือถามก่อน)
-6. ☐ Ellipse mask หมุนตาม tracking ได้
-7. ☐ Color Match ปรับ curves/LUT ได้ (ตอนนี้แค่ Basic + gain), Face Detection ใช้โมเดลแทนตัวจำแนกสีผิว
-8. ☐ Remove Background ใช้กับวัตถุอื่นนอกจากคน
-9. ☐ Smart B-Roll ใช้ embedding เชิงความหมาย (ตอนนี้จับคู่ด้วยคำ)
-10. ☐ AAF: ส่ง video reference, volume/pan keyframe, clip gain, crossfade; รองรับ 5.1 (ตอนนี้ downmix เป็น stereo); OMF
-11. ☐ Import EDL/FCPXML ให้นำ effect/color/keyframe เข้ามาด้วย
+6. ☑ Ellipse mask หมุนตาม tracking ได้
+7. ☑ Color Match ปรับ curves/LUT ได้ (ตอนนี้แค่ Basic + gain), Face Detection ใช้โมเดลแทนตัวจำแนกสีผิว
+8. ☑ Remove Background ใช้กับวัตถุอื่นนอกจากคน
+9. ☑ Smart B-Roll ใช้ embedding เชิงความหมาย (ตอนนี้จับคู่ด้วยคำ)
+10. 🟡 AAF: ส่ง video reference, volume/pan keyframe, clip gain, crossfade; รองรับ 5.1 (ตอนนี้ downmix เป็น stereo); OMF
+11. ☑ Import EDL/FCPXML ให้นำ effect/color/keyframe เข้ามาด้วย
 12. ☑ ตัวแทน (proxy) คุมด้วย CRF แทน bitrate
-13. ☐ Undo history ไม่หายเมื่อสลับ sequence (ตอนเปิด Short)
-14. ☐ Thumbnail ของ nested sequence / MOGRT เป็นภาพจริง (ตอนนี้เป็น icon)
-15. ☐ Whisper ภาษาไทย: ให้เลือกโมเดลใหญ่ขึ้น (small/medium) แบบดาวน์โหลดเพิ่ม เพราะ base ภาษาไทยยังไม่แม่น
+13. ☑ Undo history ไม่หายเมื่อสลับ sequence (ตอนเปิด Short)
+14. ☑ Thumbnail ของ nested sequence / MOGRT เป็นภาพจริง (ตอนนี้เป็น icon)
+15. ☑ Whisper ภาษาไทย: ให้เลือกโมเดลใหญ่ขึ้น (small/medium) แบบดาวน์โหลดเพิ่ม เพราะ base ภาษาไทยยังไม่แม่น
 
 ## เกณฑ์ "เสร็จ"
 - A1–A6 เสร็จ, `npm test` และ `npm run test:e2e` ผ่าน, `scripts/check_commands.mjs` 0 missing / 0 stubs
@@ -211,8 +211,33 @@ E1 → E2 → E4 → E5 → E10 → E3 → E6 → E7 → E8 → E9 → E11 → E
 - **D1** (= A1), **D5** (Remix ripple), **D12** (proxy H.264 ใช้ `-crf 23` อยู่แล้ว; encoder สำรองของ FFmpeg แบบ LGPL — OpenH264 / Media Foundation — ไม่มีโหมด CRF จึงยังใช้ bitrate)
 - พบเพิ่มจากการตรวจซ้ำและแก้แล้ว: bins / ชื่อโปรเจกต์ / In-Out / scratch disks เปลี่ยนแล้วไม่เคยทำให้ "ยังไม่บันทึก"; `collect_licenses` จะไม่รวม license ของ package ที่ bundle เมื่อย้ายไป devDependencies (แก้ + เพิ่ม license ของโมเดล); `job:end` ต้องฟัง 'exit' ด้วย ('close' รอ stdin)
 
-## ยังไม่ได้ทำ (และเหตุผล)
-- **D2, D3, D4, D6, D7, D8, D9, D10, D11, D14, D15**: เป็นฟีเจอร์ใหม่ขนาดใหญ่ (บางข้อต้องใช้โมเดลใหม่/ดาวน์โหลดเพิ่ม) เกินขอบเขตรอบแก้บั๊กนี้ — คำสั่งให้ทำ D เฉพาะข้อเล็กถ้ามีเวลา
-- **D13** undo แยกต่อ sequence: undo snapshot เก็บทั้งโปรเจกต์ (รวม sequence อื่น) ต้องออกแบบ history ใหม่; รอบนี้ทำขั้นต่ำของ E3 (History เริ่มใหม่เมื่อสลับ sequence)
-- E15 ทำแบบจำกัดสิทธิ์บางส่วน: `sandbox: true` เปิดแล้ว แต่ยังอ่านไฟล์ได้ทุกที่ และเขียนไฟล์ข้อมูล (ไม่ใช่โปรแกรม) ได้ทุกที่ เพราะ proxy, AudioStage Edits, caption sidecar เขียนข้างไฟล์ต้นฉบับ — กันไฟล์โปรแกรม/สคริปต์, Startup, การลบไฟล์นอกพื้นที่ของโปรแกรม
+## ยังไม่ได้ทำ (และเหตุผล) — ปรับหลังรอบ 3 (4 พ.ย. 2026)
+- ข้อ D ที่ค้างจากรอบนี้ทำแล้วใน Phase 9 (ดูหัวข้อ "รอบ 3" ด้านล่าง) และ E15 ทำครบแล้ว
 - ยังไม่ได้ code-sign ตัวติดตั้ง (ไม่มี certificate)
+
+---
+
+# สรุปผลรอบ 3 (4 พ.ย. 2026) — EditorStage 3.2.0
+
+ทำ E15 ให้ครบ, D13 และ D2–D4, D6–D11, D14, D15 — commit แยกทีละข้อ `[Phase 9.1]` … `[Phase 9.13]` (และ `[Phase 9.14]` เอกสาร + version). รายละเอียดอยู่ใน `docs/PROGRESS.md` หัวข้อ "Phase 9"
+
+**ผลทดสอบ:** `npm test` 668/668 (20 ชุด; ใหม่: `test_models` 44; เพิ่ม: `test_guard` 62, `test_store` 59, `test_aaf` 49, `test_interchange` 54, `test_clipview` 33, `test_tracks` 67, `test_jobs` 16, `test_color` 14), `check_commands` 0 missing / 0 stubs, `npm run build` ไม่มี error / warning. e2e ทุก phase ผ่าน (รันทีละ phase ตามล็อก Electron): phase1 44, phase2 103, phase3 38, phase4 22, phase5 53, phase5c 38, phase5c3 15, phase5d 12, phase6a 29, phase6b 29, phase6c 41, phase6e 19, phase6d 9, phase7a 18, phase7b 12, phase7c 39, phase8 25, phase9 66 (ใหม่). phase5 เดิมตรวจว่า nested clip เป็น icon — แก้ให้ตรงกับ D14 (icon จนกว่าเฟรมแรกจะ render เสร็จ)
+
+**ตัวติดตั้ง:** `release/EditorStage Setup 3.2.0.exe` = 218 MB (3.1.0 = 210 MB; เพิ่มโมเดล DeepLab v3 + Magic Touch, embed worker); `app.asar` 221 MB, `app.asar.unpacked` 80 MB. โฟลเดอร์แจก `release/EditorStage 3.2.0/` (ตัวติดตั้ง + อ่านก่อนติดตั้ง.txt). เปิด `release/win-unpacked/EditorStage.exe` (profile แยก): หน้าโหลด, version 3.2.0, MediaPipe โหลดได้, onnxruntime-web wasm + Whisper Base ถอดเสียงได้, รายการ model pack (Small 252 MB / Medium 990 MB / Multilingual 135 MB ยังไม่ติดตั้ง) ตอบผ่าน IPC, embed worker + deeplab_v3 + magic_touch เสิร์ฟจาก es-app
+
+## ทำแล้ว (รอบ 3)
+- **E15** ครบ: อ่านได้เฉพาะไฟล์สื่อ / ที่ผู้ใช้เลือกหรือลากวาง / ที่โปรเจกต์ที่เปิดอ้างถึง / ข้อมูลของโปรแกรม; เขียน / ลบ / สร้างโฟลเดอร์ได้เฉพาะ path ที่เลือก + ไฟล์ที่ตั้งชื่อตามนั้น, โฟลเดอร์ของโปรเจกต์, Proxies, userData, temp; FFmpeg ตรวจ input / output / concat list / filter ที่อ่านไฟล์; Recent projects เก็บฝั่ง main
+- **D13** History แยกต่อ sequence (undo ใน sequence หนึ่งไม่ย้อนงานของ sequence อื่น)
+- **D2** Optical Flow (GPU block matching), **D3** Export Queue ใน hidden render window, **D4** source patching, **D6** ellipse mask หมุนได้ + ตาม tracking, **D7** Color Match → RGB Curves + Face Landmarker, **D8** Remove Background: Animals / Vehicles / Any Object / Object at Point
+- **D9** Smart B-Roll ตามความหมาย: model pack แบบดาวน์โหลดเมื่อผู้ใช้กด (main process, revision ตรึงไว้, ตรวจขนาด + hash), multilingual sentence model; MediaPipe telemetry ตอบในเครื่อง
+- **D15** Whisper Small / Medium แบบดาวน์โหลด (8-bit)
+- **D14** thumbnail ของ nested sequence / MOGRT render จริง
+- **D10** AAF: volume keyframe / clip gain / pan → Mono Audio Gain, crossfade → Transition, 5.1 → 6 mono track, video reference (ไม่ฝังภาพ)
+- **D11** import EDL (ASC CDL) / FCPXML / Premiere XML พร้อม motion, opacity, crop, volume, Gaussian Blur และ keyframe; effect ที่แปลงไม่ได้แจ้งชื่อ
+
+## ยังไม่ได้ทำ / ทำบางส่วน (รอบ 3) และเหตุผล
+- **D10 OMF**: ไม่ได้ทำ — เครื่องนี้ไม่มีโปรแกรมหรือตัวตรวจที่อ่าน OMF จึงยืนยันความถูกต้องของไฟล์ไม่ได้ (AAF ใช้แทนได้ใน Pro Tools / Resolve / Premiere / Nuendo)
+- **D10 AAF**: ตรวจโครงสร้างได้เท่าที่ทำในเครื่องนี้ — ทุก class / property id ในไฟล์ต้องมีใน MetaDictionary ของไฟล์เอง + อ่านกลับด้วย parser ของเราเอง; ไม่ได้อ่านกลับด้วย pyaaf2 (รอบนี้ห้ามใช้ Python) และไม่ได้เปิดใน DAW จริง (ไม่มีในเครื่อง). ไม่ส่ง audio effect (EQ / compressor); pan ส่งเป็น balance L/R; crossfade แบบ constant power ไปเป็น dissolve ธรรมดา; คลิปวิดีโอที่เปลี่ยนความเร็วไม่อยู่ใน video reference
+- **D11**: FCPXML Color Board / Color Wheels / Curves และ Three-Way Color Corrector ของ FCP7 ไม่แปลง (ค่าภายในไม่มีเอกสารที่ map ได้ตรง) — แจ้งชื่อหลัง import
+- **D15**: Whisper Small / Medium ช้าบน CPU (WASM): เครื่องนี้ Small ใช้ ~3 นาทีกับเสียง 6 วินาที รวมโหลดโมเดล; ยังไม่มี WebGPU path
+- **Code signing**: ไม่ได้ทำ — ต้องใช้ certificate จริง (เสียเงิน) ซึ่งไม่มี; Windows SmartScreen จะเตือนตอนติดตั้ง (`อ่านก่อนติดตั้ง.txt` บอกวิธีกด Run anyway)

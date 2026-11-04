@@ -1,7 +1,7 @@
 {
   "name": "editorstage",
   "productName": "EditorStage",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "EditorStage - offline professional non-linear video editor (Electron + React + WebGL2 compositor + Web Audio + FFmpeg)",
   "main": "electron/main.js",
   "author": "BYS & RB",
