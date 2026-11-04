@@ -134,6 +134,8 @@ EditorStage (BYS & RB). Ask them for it.
 // ---- AI models bundled in dist/ (assets/models): which license each one has, with the license text ----
 const MODELS = [
   ['selfie_segmenter.tflite', 'MediaPipe Selfie Segmenter (Remove Background)', 'Apache-2.0', 'Google LLC (The MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter'],
+  ['deeplab_v3.tflite', 'DeepLab v3 image segmenter (Remove Background: animals, vehicles, objects)', 'Apache-2.0', 'Google LLC (The TensorFlow / MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter'],
+  ['magic_touch.tflite', 'MediaPipe Interactive Segmenter, Magic Touch (Remove Background: object at a point)', 'Apache-2.0', 'Google LLC (The MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/interactive_segmenter'],
   ['face_landmarker.task', 'MediaPipe Face Landmarker (Auto Reframe, Long-to-Shorts)', 'Apache-2.0', 'Google LLC (The MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker'],
   ['efficientdet_lite0.tflite', 'EfficientDet-Lite0 object detector (Auto Reframe, Smart B-Roll)', 'Apache-2.0', 'Google LLC (The TensorFlow / MediaPipe Authors)', 'https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector'],
   ['whisper', 'Whisper base, ONNX export onnx-community/whisper-base_timestamped (speech to text)', 'MIT', 'OpenAI (Whisper weights); ONNX conversion by the onnx-community / Hugging Face', 'https://huggingface.co/onnx-community/whisper-base_timestamped'],

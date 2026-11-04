@@ -59,7 +59,7 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   const moving = make('moving.mp4', ['-f', 'lavfi', '-i', "color=c=black:s=160x90:r=10:d=2[bg];color=c=white:s=20x20:r=10[fg];[bg][fg]overlay=x='t*60':y=35:shortest=1", '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '1']);
   const frameAt = async (mode) => js(`T.fresh(160, 90); const m = await T.imp(${J(moving)}); const [id] = T.place(m, 0, 'V1');
     E.store.edit('speed', ({ seq }) => E.editing.setSpeed(seq, [id], { speed: 50, ripple: true, sampling: ${J(mode)} }));
-    const img = await E.exporter.renderFrame(0.7, 160, 90); const row = (y) => [...Array(160).keys()].map((x) => img.data[(y * 160 + x) * 4]);
+    await E.exporter.renderFrame(0.7, 160, 90); const img = await E.exporter.renderFrame(0.7, 160, 90); const row = (y) => [...Array(160).keys()].map((x) => img.data[(y * 160 + x) * 4]);
     return row(45);`);
   const sample = await frameAt('sample'); const blend = await frameAt('blend'); const flow = await frameAt('flow');
   // source frame 3.5: frame 3 has the box at x 18..38, frame 4 at 24..44; halfway it is at 21..41
@@ -135,7 +135,7 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   const coolImg = make('cool_tgt.png', ['-f', 'lavfi', '-i', 'gradients=s=160x90:c0=0x081830:c1=0x90b0f0:x0=0:y0=0:x1=160:y1=90:n=2', '-frames:v', '1']);
   r = await js(`T.fresh(160, 90); const a = await T.imp(${J(coolImg)}); const b = await T.imp(${J(warmImg)});
     const [ta] = T.place(a, 0, 'V1'); const [tb] = T.place(b, 10, 'V1'); E.store.set({ playhead: 1 });
-    const mean = async (t) => { const img = await E.exporter.renderFrame(t, 160, 90); const m = [0, 0, 0]; for (let i = 0; i < img.data.length; i += 4) for (let k = 0; k < 3; k++) m[k] += img.data[i + k]; return m.map((v) => v / (img.data.length / 4)); };
+    const mean = async (t) => { await E.exporter.renderFrame(t, 160, 90); const img = await E.exporter.renderFrame(t, 160, 90); const m = [0, 0, 0]; for (let i = 0; i < img.data.length; i += 4) for (let k = 0; k < 3; k++) m[k] += img.data[i + k]; return m.map((v) => v / (img.data.length / 4)); };
     const ref = await mean(11), before = await mean(1);
     const v = await E.colorAuto.applyColorMatch(ta, tb, 11, true, true);
     const after = await mean(1); const lu = T.clip(ta).lumetri;
@@ -145,4 +145,20 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   ok('...and the matched clip looks like the reference (mean color)', dist(r.after) < dist(r.before) * 0.25, J({ ref: r.ref, before: r.before, after: r.after }));
   r = await js(`const { faceRegion } = E.colorAuto; const c = document.createElement('canvas'); c.width = 64; c.height = 36; const g = c.getContext('2d'); g.fillStyle = '#d9a080'; g.fillRect(0, 0, 64, 36); let model = 'ok'; try { await E.vision.detectFace(c); } catch (e) { model = String(e); } return { r: await faceRegion(c, 16, 9), model };`);
   ok('the face model loads and finds no face in a skin-coloured block (no false skin match)', r.r === null && r.model === 'ok', J(r));
+
+  console.log('D8 Remove Background for other subjects');
+  // a red disc (the "object") on a grey textured background
+  const disc = make('disc.png', ['-f', 'lavfi', '-i', "color=c=gray:s=320x180:d=1,format=rgb24,geq=r='if(lt(hypot(X-160,Y-90),45),230,90+30*sin(X/7))':g='if(lt(hypot(X-160,Y-90),45),40,90+30*sin(Y/5))':b='if(lt(hypot(X-160,Y-90),45),40,100)'", '-frames:v', '1']);
+  const rbg = async (subject, point) => js(`T.fresh(320, 180); const m = await T.imp(${J(disc)}); const [id] = T.place(m, 0, 'V1');
+    T.patch(id, (c) => { c.effects = [{ id: 'rb', effectId: 'Video Effects/Keying/Remove Background', name: 'Remove Background', category: 'Video', folder: 'Keying', enabled: true,
+      params: { subject: { v: ${subject}, keys: null }, point: { v: ${J(point || [0.5, 0.5])}, keys: null }, threshold: { v: 50, keys: null }, feather: { v: 0, keys: null }, choke: { v: 0, keys: null }, invert: { v: false, keys: null } } }]; });
+    const img = await E.exporter.renderFrame(0.5, 320, 180); const p = (x, y) => img.data[(y * 320 + x) * 4];
+    return { center: p(160, 90), corner: p(20, 20), edge: p(300, 160) };`);
+  r = await rbg(4, [0.5, 0.5]);
+  ok('Object at Point keeps the object under the point (the red disc) and removes the rest', r.center > 180 && r.corner < 30 && r.edge < 30, J(r));
+  r = await rbg(4, [0.08, 0.1]);
+  ok('...a point on the background keeps the background around it instead', r.corner > 60, J(r));
+  r = await js(`const clip = E.store.getState().sequence.clips[0]; T.patch(clip.id, (c) => { c.effects[0].params.subject = { v: 2, keys: null }; });
+    let err = null; try { await E.exporter.renderFrame(0.5, 320, 180); } catch (e) { err = String(e); } return { err, variant: E.segment.removeBgOptions(T.clip(clip.id)).variant, has: !!E.segment.getMask(E.segment.maskKey(clip.mediaId, 0, 's2')) };`);
+  ok('the Vehicles / Animals / Any Object subjects run the DeepLab model (own cached mask per subject)', r.err === null && r.variant === 's2' && r.has === true, J(r));
 });

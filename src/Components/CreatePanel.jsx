@@ -10,6 +10,7 @@ import { previewStart, previewEnd } from '../Services/hoverPreview';
 import { CAPTION_PRESETS, defaultCaptionStyle } from '../Services/ai/captions';
 import { requestPanel } from '../Core/layout';
 import { ShortsTab, BRollTab } from './CreateAiTabs';
+import { SUBJECTS } from '../Services/segment';
 
 const trackKind = (seq, c) => seq.tracks.find((t) => t.id === c.track)?.kind;
 /** The clips a tool works on: the selected clips of that kind, else the one under the playhead on the top track. */
@@ -133,14 +134,16 @@ function AiTab() {
   const s = useStore((x) => x); const ids = targetClips('video', s);
   const fx = (c) => (c.effects || []).find((e) => e.name === 'Remove Background');
   const clip = ids.length ? s.sequence.clips.find((c) => c.id === ids[0]) : null; const cur = clip && fx(clip);
-  const add = (c) => { if (fx(c)) return; c.effects = c.effects || []; c.effects.push({ id: Math.random().toString(36).slice(2, 9), effectId: 'Video Effects/Keying/Remove Background', name: 'Remove Background', category: 'Video', folder: 'Keying', enabled: true, params: { threshold: { v: 50, keys: null }, feather: { v: 3, keys: null }, choke: { v: 0, keys: null }, invert: { v: false, keys: null } } }); };
+  const add = (c) => { if (fx(c)) return; c.effects = c.effects || []; c.effects.push({ id: Math.random().toString(36).slice(2, 9), effectId: 'Video Effects/Keying/Remove Background', name: 'Remove Background', category: 'Video', folder: 'Keying', enabled: true, params: { subject: { v: 0, keys: null }, point: { v: [0.5, 0.5], keys: null }, threshold: { v: 50, keys: null }, feather: { v: 3, keys: null }, choke: { v: 0, keys: null }, invert: { v: false, keys: null } } }); };
   const setP = (k, v) => edit('Remove Background', ({ seq }) => patchClips(ids, (c) => { const e = fx(c); if (e) e.params[k] = { v, keys: null }; })(seq), { coalesce: `rbg:${k}` });
   return <div>
     <h5>Remove Background</h5>
-    <p className="dim">Cuts out people with an on-device segmentation model (MediaPipe Selfie Segmenter). Put a background on the track below, or use Canvas.</p>
+    <p className="dim">Cuts out the subject with on-device segmentation models: people (MediaPipe Selfie Segmenter), animals, vehicles or any of 20 object kinds (DeepLab v3), or the object under a point you choose (MediaPipe Interactive Segmenter). Put a background on the track below, or use Canvas.</p>
     {!ids.length && <div className="dim">Select a video clip.</div>}
     {ids.length > 0 && !cur && <button className="primary" onClick={() => apply('Remove Background', ids, add)}>Remove Background</button>}
     {cur && <>
+      <div className="param"><label>Subject</label><select value={Math.round(cur.params.subject?.v ?? 0)} onChange={(e) => setP('subject', +e.target.value)}>{SUBJECTS.map((n, i) => <option key={n} value={i}>{n}</option>)}</select></div>
+      {Math.round(cur.params.subject?.v ?? 0) === 4 && <div className="param"><label>Object Point</label>{[0, 1].map((k) => <input key={k} type="range" min="0" max="1" step="0.01" value={(cur.params.point?.v || [0.5, 0.5])[k]} onChange={(e) => { const p = [...(cur.params.point?.v || [0.5, 0.5])]; p[k] = +e.target.value; setP('point', p); }} />)}<span className="dim">x / y in the picture</span></div>}
       {[['threshold', 'Threshold', 0, 100], ['feather', 'Feather', 0, 20], ['choke', 'Choke', -10, 10]].map(([k, l, a, b]) => <div className="param" key={k}><label>{l}</label><input type="range" min={a} max={b} value={cur.params[k]?.v ?? 0} onChange={(e) => setP(k, +e.target.value)} /><span className="val">{cur.params[k]?.v}</span></div>)}
       <div className="param"><label>Invert</label><input type="checkbox" checked={!!cur.params.invert?.v} onChange={(e) => setP('invert', e.target.checked)} /></div>
       <button onClick={() => apply('Remove Background Off', ids, (c) => { c.effects = (c.effects || []).filter((e) => e.name !== 'Remove Background'); })}>Turn off</button>

@@ -11,7 +11,7 @@ import { prepareMogrtClipFrame } from './mogrt/clip';
 import { mogrtAudioSegments } from './mogrt/audio';
 import { needsRetimedAudio, retimedAudio, toAudioBuffer } from './retimedAudio';
 import { loadLut } from './lut';
-import { maskKey, getMask, computeMask, hasRemoveBg } from './segment';
+import { maskKey, getMask, computeMask, hasRemoveBg, removeBgOptions } from './segment';
 import { captionsToSrt, captionsToVtt } from './ai/stt';
 import { ffmpegInfo, hasEncoder, videoEncoderOf, GPL_ENCODERS } from './ffmpegCaps';
 
@@ -228,8 +228,8 @@ async function prepareFrame(state, t) {
   for (const c of fl.sequence.clips) {
     if (!c.enabled || !hasRemoveBg(c) || t < c.start || t >= c.start + c.dur) continue;
     const m = mediaById(c.mediaId); if (!m) continue; const fps = m.fps || state.sequence.fps || 30;
-    const key = maskKey(m.id, m.kind === 'image' ? 0 : Math.round(clipSourceTime(c, t, m) * fps)); if (getMask(key)) continue;
-    const el = elementForClip(c, t); if (el) segs.push(computeMask(key, el).catch(() => {}));
+    const o = removeBgOptions(c, t - c.start); const key = maskKey(m.id, m.kind === 'image' ? 0 : Math.round(clipSourceTime(c, t, m) * fps), o.variant); if (getMask(key)) continue;
+    const el = elementForClip(c, t); if (el) segs.push(computeMask(key, el, o).catch(() => {}));
   }
   await Promise.all(segs);
 }

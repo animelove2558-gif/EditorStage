@@ -3,7 +3,7 @@ import { evalParam } from '../Core/params';
 import { updateAudio, disposeClipAudio } from './audioEngine';
 import { clearPeaks } from './waveform';
 import { graphicCanvas } from './graphics';
-import { maskKey, getMask, computeMask } from './segment';
+import { maskKey, getMask, computeMask, removeBgOptions } from './segment';
 import { flatten } from '../Core/flatten';
 import { mogrtCanvasForClip } from './mogrt/clip';
 import { syncMogrtAudio } from './mogrt/audio';
@@ -256,13 +256,13 @@ export function syncPlayback(realState) {
 
 export const imageById = (id) => { const m = mediaById(id); return m && m.kind === 'image' ? elementForMedia(m, m.id) : null; };
 export const echoElement = (clip, k) => { const m = clip.mediaId && mediaById(clip.mediaId); return m && m.kind === 'video' ? elementForMedia(m, `${clip.elKey || clip.id}#e${k}`) : null; };
-/** Remove Background: the cached person mask of the source frame a clip shows at t (computed in the background when missing). */
+/** Remove Background: the cached subject mask of the source frame a clip shows at t (computed in the background when missing). */
 export function maskFor(clip, t) {
   const m = clip.mediaId && mediaById(clip.mediaId); if (!m || m.kind === 'audio') return null;
   const fps = m.fps || getState().sequence.fps || 30; const src = clipSourceTime(clip, t, m); const frame = m.kind === 'image' ? 0 : Math.round(src * fps);
-  const key = maskKey(m.id, frame); const have = getMask(key); if (have) return { key, ...have };
+  const o = removeBgOptions(clip, t - clip.start); const key = maskKey(m.id, frame, o.variant); const have = getMask(key); if (have) return { key, ...have };
   const el = elementForClip(clip, t);
-  if (el && (m.kind === 'image' || m.synthetic || (el.readyState >= 2 && Math.abs(el.currentTime - src) < 0.5 / fps))) computeMask(key, el).catch(() => {});
+  if (el && (m.kind === 'image' || m.synthetic || (el.readyState >= 2 && Math.abs(el.currentTime - src) < 0.5 / fps))) computeMask(key, el, o).catch(() => {});
   return null;
 }
 export const renderDeps = { elementFor: elementForClip, echoElement, imageById, blendFor, maskFor };

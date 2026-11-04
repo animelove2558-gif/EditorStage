@@ -7,6 +7,18 @@ MediaPipe Selfie Segmenter (Remove Background)
   copyright: Google LLC (The MediaPipe Authors)
   source: https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter
 
+DeepLab v3 image segmenter (Remove Background: animals, vehicles, objects)
+  file: deeplab_v3.tflite
+  license: Apache-2.0
+  copyright: Google LLC (The TensorFlow / MediaPipe Authors)
+  source: https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter
+
+MediaPipe Interactive Segmenter, Magic Touch (Remove Background: object at a point)
+  file: magic_touch.tflite
+  license: Apache-2.0
+  copyright: Google LLC (The MediaPipe Authors)
+  source: https://ai.google.dev/edge/mediapipe/solutions/vision/interactive_segmenter
+
 MediaPipe Face Landmarker (Auto Reframe, Long-to-Shorts)
   file: face_landmarker.task
   license: Apache-2.0
