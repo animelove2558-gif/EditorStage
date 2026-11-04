@@ -134,7 +134,7 @@ function AiTab() {
   const s = useStore((x) => x); const ids = targetClips('video', s);
   const fx = (c) => (c.effects || []).find((e) => e.name === 'Remove Background');
   const clip = ids.length ? s.sequence.clips.find((c) => c.id === ids[0]) : null; const cur = clip && fx(clip);
-  const add = (c) => { if (fx(c)) return; c.effects = c.effects || []; c.effects.push({ id: Math.random().toString(36).slice(2, 9), effectId: 'Video Effects/Keying/Remove Background', name: 'Remove Background', category: 'Video', folder: 'Keying', enabled: true, params: { subject: { v: 0, keys: null }, point: { v: [0.5, 0.5], keys: null }, threshold: { v: 50, keys: null }, feather: { v: 3, keys: null }, choke: { v: 0, keys: null }, invert: { v: false, keys: null } } }); };
+  const add = (c) => { if (fx(c)) return; c.effects = c.effects || []; c.effects.push({ id: Math.random().toString(36).slice(2, 9), effectId: 'Video Effects/Keying/Remove Background', name: 'Remove Background', category: 'Video', folder: 'Keying', enabled: true, params: { subject: { v: 0, keys: null }, objPoint: { v: [0.5, 0.5], keys: null }, threshold: { v: 50, keys: null }, feather: { v: 3, keys: null }, choke: { v: 0, keys: null }, invert: { v: false, keys: null } } }); };
   const setP = (k, v) => edit('Remove Background', ({ seq }) => patchClips(ids, (c) => { const e = fx(c); if (e) e.params[k] = { v, keys: null }; })(seq), { coalesce: `rbg:${k}` });
   return <div>
     <h5>Remove Background</h5>
@@ -143,7 +143,7 @@ function AiTab() {
     {ids.length > 0 && !cur && <button className="primary" onClick={() => apply('Remove Background', ids, add)}>Remove Background</button>}
     {cur && <>
       <div className="param"><label>Subject</label><select value={Math.round(cur.params.subject?.v ?? 0)} onChange={(e) => setP('subject', +e.target.value)}>{SUBJECTS.map((n, i) => <option key={n} value={i}>{n}</option>)}</select></div>
-      {Math.round(cur.params.subject?.v ?? 0) === 4 && <div className="param"><label>Object Point</label>{[0, 1].map((k) => <input key={k} type="range" min="0" max="1" step="0.01" value={(cur.params.point?.v || [0.5, 0.5])[k]} onChange={(e) => { const p = [...(cur.params.point?.v || [0.5, 0.5])]; p[k] = +e.target.value; setP('point', p); }} />)}<span className="dim">x / y in the picture</span></div>}
+      {Math.round(cur.params.subject?.v ?? 0) === 4 && <div className="param"><label>Object Point</label>{[0, 1].map((k) => <input key={k} type="range" min="0" max="1" step="0.01" value={(cur.params.objPoint?.v || [0.5, 0.5])[k]} onChange={(e) => { const p = [...(cur.params.objPoint?.v || [0.5, 0.5])]; p[k] = +e.target.value; setP('objPoint', p); }} />)}<span className="dim">x / y in the picture</span></div>}
       {[['threshold', 'Threshold', 0, 100], ['feather', 'Feather', 0, 20], ['choke', 'Choke', -10, 10]].map(([k, l, a, b]) => <div className="param" key={k}><label>{l}</label><input type="range" min={a} max={b} value={cur.params[k]?.v ?? 0} onChange={(e) => setP(k, +e.target.value)} /><span className="val">{cur.params[k]?.v}</span></div>)}
       <div className="param"><label>Invert</label><input type="checkbox" checked={!!cur.params.invert?.v} onChange={(e) => setP('invert', e.target.checked)} /></div>
       <button onClick={() => apply('Remove Background Off', ids, (c) => { c.effects = (c.effects || []).filter((e) => e.name !== 'Remove Background'); })}>Turn off</button>

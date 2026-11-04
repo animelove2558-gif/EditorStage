@@ -151,7 +151,7 @@ suite('phase9 e2e', async ({ js, ok, out, frames, px, near, nextSave, nextOpen, 
   const disc = make('disc.png', ['-f', 'lavfi', '-i', "color=c=gray:s=320x180:d=1,format=rgb24,geq=r='if(lt(hypot(X-160,Y-90),45),230,90+30*sin(X/7))':g='if(lt(hypot(X-160,Y-90),45),40,90+30*sin(Y/5))':b='if(lt(hypot(X-160,Y-90),45),40,100)'", '-frames:v', '1']);
   const rbg = async (subject, point) => js(`T.fresh(320, 180); const m = await T.imp(${J(disc)}); const [id] = T.place(m, 0, 'V1');
     T.patch(id, (c) => { c.effects = [{ id: 'rb', effectId: 'Video Effects/Keying/Remove Background', name: 'Remove Background', category: 'Video', folder: 'Keying', enabled: true,
-      params: { subject: { v: ${subject}, keys: null }, point: { v: ${J(point || [0.5, 0.5])}, keys: null }, threshold: { v: 50, keys: null }, feather: { v: 0, keys: null }, choke: { v: 0, keys: null }, invert: { v: false, keys: null } } }]; });
+      params: { subject: { v: ${subject}, keys: null }, objPoint: { v: ${J(point || [0.5, 0.5])}, keys: null }, threshold: { v: 50, keys: null }, feather: { v: 0, keys: null }, choke: { v: 0, keys: null }, invert: { v: false, keys: null } } }]; });
     const img = await E.exporter.renderFrame(0.5, 320, 180); const p = (x, y) => img.data[(y * 320 + x) * 4];
     return { center: p(160, 90), corner: p(20, 20), edge: p(300, 160) };`);
   r = await rbg(4, [0.5, 0.5]);

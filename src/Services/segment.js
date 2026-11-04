@@ -34,7 +34,7 @@ export const putMask = (key, m) => { masks.set(key, m); };
 export function removeBgOptions(clip, local = 0) {
   const fx = (clip.effects || []).find((e) => e.enabled && e.name === 'Remove Background'); if (!fx) return { subject: 0, point: null, variant: '' };
   const v = resolveParams(fx.params || {}, local); const subject = Math.max(0, Math.min(SUBJECTS.length - 1, Math.round(+v.subject || 0)));
-  const point = subject === 4 ? [Math.min(1, Math.max(0, (v.point || [0.5, 0.5])[0])), Math.min(1, Math.max(0, (v.point || [0.5, 0.5])[1]))] : null;
+  const point = subject === 4 ? [Math.min(1, Math.max(0, (v.objPoint || [0.5, 0.5])[0])), Math.min(1, Math.max(0, (v.objPoint || [0.5, 0.5])[1]))] : null;
   return { subject, point, variant: subject === 0 ? '' : subject === 4 ? `p${point[0].toFixed(3)},${point[1].toFixed(3)}` : `s${subject}` };
 }
 
