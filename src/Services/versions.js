@@ -161,6 +161,49 @@ export function startAutoSave(minutes = 5) {
 }
 export const stopAutoSave = () => { if (timer) clearInterval(timer); timer = null; };
 
+// ---------------------------------------------------------------- recovery journal
+// The auto-save interval is minutes; the journal is what a crash loses at most a few seconds against. About 2 s after the last
+// edit the whole project goes to "journal.json" in the history folder (one file, replaced atomically). A big project is written
+// less often: the gap is at least 20 times what the last write took, so journaling never costs more than 5% of the time.
+// It follows Preferences > Auto Save: an interval of 0 turns it off too.
+const SESSION = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+export const JOURNAL_DEBOUNCE_MS = 2000;
+const journalPath = (dir) => `${dir}${sep(dir)}journal.json`;
+let jTimer = null, jLastEnd = 0, jCost = 0, jBusy = false, jDir = null, jSeen = null, jWasDirty = false;
+/** Milliseconds to wait before the next journal write. */
+export const journalDelay = (sinceLastWrite, lastCost, debounce = JOURNAL_DEBOUNCE_MS) => Math.max(debounce, lastCost * 20 - sinceLastWrite);
+export async function writeJournal() {
+  const s = getState(); if (!s.dirty || !(getPrefs().autoSaveMin > 0)) return false;
+  jBusy = true; const t0 = Date.now();
+  try {
+    const dir = await historyDir(s); await es().mkdir(dir);
+    if (jDir && jDir !== dir) await removeJournal();
+    await es().writeFile(journalPath(dir), JSON.stringify({ session: SESSION, time: Date.now(), data: projectData(s) })); jDir = dir;
+    return true;
+  } catch (e) { console.warn('journal failed', e); return false; } finally { jBusy = false; jCost = Date.now() - t0; jLastEnd = Date.now(); }
+}
+async function removeJournal() { if (!jDir) return; const d = jDir; jDir = null; try { await es().removeFile(journalPath(d)); } catch { /* none */ } }
+function scheduleJournal() {
+  if (jTimer) clearTimeout(jTimer);
+  jTimer = setTimeout(async () => { jTimer = null; if (jBusy) { scheduleJournal(); return; } await writeJournal(); }, journalDelay(Date.now() - jLastEnd, jCost));
+}
+/** Store listener: an edit schedules a write; the project becoming clean (Save, a project opened) ends the journal. */
+function watchJournal() {
+  const s = getState(); const parts = [s.sequence, s.media, s.seqs, s.bins];
+  const same = jSeen && parts.every((p, i) => p === jSeen[i]); jSeen = parts;
+  if (jWasDirty && !s.dirty) { if (jTimer) { clearTimeout(jTimer); jTimer = null; } removeJournal(); }
+  jWasDirty = s.dirty;
+  if (s.dirty && !same) scheduleJournal();
+}
+/** The journal a crashed session left, or null (none, unreadable, or from another session than the marker). */
+async function readJournal(marker) {
+  try {
+    const p = journalPath(marker.dir); if (!marker.session || !(await es().exists(p))) return null;
+    const j = JSON.parse(await es().readText(p));
+    return j.session === marker.session && j.data?.sequence ? j : null;
+  } catch { return null; }
+}
+
 // ---------------------------------------------------------------- crash recovery
 // userData/session.json exists while EditorStage runs and is removed when the window closes normally. Found at start-up,
 // it means the last session ended in a crash / power cut / kill: its newest auto-save is offered for recovery.
@@ -168,10 +211,10 @@ async function markerPath() { const ud = await es().userData(); return `${ud}${s
 let markerKey = '';
 async function writeMarker() {
   const s = getState(); const key = `${s.projectId}|${s.projectPath}|${s.projectName}`; if (key === markerKey) return; markerKey = key;
-  try { await es().writeFile(await markerPath(), JSON.stringify({ started: Date.now(), projectId: s.projectId, projectPath: s.projectPath, projectName: s.projectName, dir: await historyDir(s) })); } catch { /* read-only profile: no recovery */ }
+  try { await es().writeFile(await markerPath(), JSON.stringify({ started: Date.now(), session: SESSION, projectId: s.projectId, projectPath: s.projectPath, projectName: s.projectName, dir: await historyDir(s) })); } catch { /* read-only profile: no recovery */ }
 }
 /** Normal close: the session ended cleanly. */
-export async function clearSessionMarker() { markerKey = '\u0000closed'; try { await es().removeFile(await markerPath()); } catch { /* none */ } }
+export async function clearSessionMarker() { markerKey = '\u0000closed'; if (jTimer) { clearTimeout(jTimer); jTimer = null; } await removeJournal(); try { await es().removeFile(await markerPath()); } catch { /* none */ } }
 /**
  * Start-up: read the marker of the previous session, start this session's marker. Returns what can be recovered
  * ({ marker, rev } when the previous session crashed after an auto-save that was not followed by a Save), else null.
@@ -179,14 +222,17 @@ export async function clearSessionMarker() { markerKey = '\u0000closed'; try { a
 export async function bootRecovery() {
   let prev = null; const mp = await markerPath();
   try { if (await es().exists(mp)) prev = JSON.parse(await es().readText(mp)); } catch { /* unreadable: treated as a clean exit */ }
-  await writeMarker(); subscribe(() => { if (markerKey !== '\u0000closed') writeMarker(); });
+  await writeMarker(); subscribe(() => { if (markerKey !== '\u0000closed') { writeMarker(); watchJournal(); } });
   if (!prev?.dir) return null;
   const rev = await latestRevision(prev.dir).catch(() => null);
+  const journal = await readJournal(prev); // edits after the last recorded revision
+  if (journal && (!rev || journal.time > rev.time)) return { marker: prev, rev: { id: null, label: 'Journal', time: journal.time }, journal };
   if (!rev || rev.label === 'Save') return null; // nothing recorded, or the newest revision is a Save (the file has it)
   return { marker: prev, rev };
 }
 /** Load the recovered auto-save: same project identity and file as before the crash, marked unsaved. */
-export async function recoverSession({ marker, rev }) {
+export async function recoverSession({ marker, rev, journal }) {
   set({ projectId: marker.projectId || getState().projectId, projectPath: marker.projectPath || null, projectName: marker.projectName || 'Untitled' });
+  if (journal) { const s = getState(); loadProject({ projectId: s.projectId, ...journal.data }, s.projectPath); markDirty(); return rev; }
   return restoreRevision(rev.id, marker.dir);
 }

@@ -103,6 +103,52 @@ ok('the queue is idle afterwards', !V.commitBusy());
   ok('after a normal close nothing is offered', (await V.bootRecovery()) === null);
 }
 
+// ---- C-09: recovery journal ----
+{
+  const journalOf = (dir) => path.join(dir, 'journal.json');
+  ok('the delay is the debounce for a small project', V.journalDelay(0, 10) === 2000);
+  ok('a slow write spaces the next one out to 20 times its cost', V.journalDelay(1000, 500) === 9000);
+  ok('...counting the time already passed', V.journalDelay(9500, 500) === 2000);
+  S.loadProject({ projectId: 'jr1', projectName: 'Journal', sequence: { ...S.getState().sequence, id: 'jq', clips: [] }, media: [] }, null);
+  fs.rmSync(path.join(ud, 'session.json'), { force: true });
+  await V.bootRecovery(); // this "session": marker written, journal watching
+  const dir = await V.historyDir();
+  S.edit('Edit', ({ seq }) => { seq.clips.push({ id: 'j1', track: 'V1', start: 0, dur: 1 }); });
+  ok('nothing is written at once', !fs.existsSync(journalOf(dir)));
+  for (let i = 0; i < 80 && !fs.existsSync(journalOf(dir)); i++) await new Promise((r) => setTimeout(r, 50));
+  ok('an edit reaches the journal about 2 s later', fs.existsSync(journalOf(dir)));
+  S.edit('Edit 2', ({ seq }) => { seq.clips.push({ id: 'j2', track: 'V1', start: 1, dur: 1 }); });
+  ok('writeJournal records the newest edit', (await V.writeJournal()) === true && JSON.parse(fs.readFileSync(journalOf(dir), 'utf8')).data.sequence.clips.length === 2);
+  // crash: the marker and the journal stay; a new start sees them. No revision exists yet, so only the journal can bring this back.
+  const marker = JSON.parse(fs.readFileSync(path.join(ud, 'session.json'), 'utf8'));
+  ok('the marker names the session', !!marker.session);
+  const rec = await V.bootRecovery();
+  ok('a crash before the first auto-save is recoverable', !!rec?.journal && rec.rev.label === 'Journal');
+  S.loadProject({ projectId: 'other', projectName: 'Other', sequence: { ...S.getState().sequence, id: 'zz', clips: [] }, media: [] }, null);
+  await V.recoverSession(rec);
+  ok('recovering brings the last edit back', S.getState().sequence.clips.some((c) => c.id === 'j2') && S.getState().projectId === 'jr1');
+  ok('...marked unsaved', S.getState().dirty === true);
+  // an auto-save newer than the journal wins
+  await V.writeJournal();
+  const mk2 = JSON.parse(fs.readFileSync(path.join(ud, 'session.json'), 'utf8'));
+  const j2 = JSON.parse(fs.readFileSync(journalOf(dir), 'utf8')); j2.time = Date.now() - 3600000; j2.session = mk2.session; fs.writeFileSync(journalOf(dir), JSON.stringify(j2));
+  await V.commitRevision('Auto-save', { auto: true });
+  const rec2 = await V.bootRecovery();
+  ok('a newer auto-save is preferred to an older journal', !!rec2 && !rec2.journal && rec2.rev.label === 'Auto-save', JSON.stringify(rec2?.rev));
+  // a journal of another session is not offered
+  const j3 = JSON.parse(fs.readFileSync(journalOf(dir), 'utf8')); j3.time = Date.now() + 1000; j3.session = 'old'; fs.writeFileSync(journalOf(dir), JSON.stringify(j3));
+  const rec3 = await V.bootRecovery();
+  ok('a journal left by an earlier session is ignored', !rec3?.journal);
+  // Save ends the journal
+  S.edit('Edit 3', ({ seq }) => { seq.clips.push({ id: 'j3', track: 'V1', start: 2, dur: 1 }); });
+  await V.writeJournal(); ok('journal present before the Save', fs.existsSync(journalOf(dir)));
+  S.markSaved(); await new Promise((r) => setTimeout(r, 30));
+  ok('Save removes the journal', !fs.existsSync(journalOf(dir)));
+  S.edit('Edit 4', ({ seq }) => { seq.clips.push({ id: 'j4', track: 'V1', start: 3, dur: 1 }); });
+  await V.writeJournal(); await V.clearSessionMarker();
+  ok('a normal close removes the journal', !fs.existsSync(journalOf(dir)));
+}
+
 // ---- E6: damaged project files ----
 {
   const bad = (t) => { try { P.parseProject(t); return null; } catch (e) { return e.message; } };
