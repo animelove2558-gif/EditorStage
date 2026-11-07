@@ -7,7 +7,8 @@ import { TRANSITION_FRAG, FLOW_COARSE_FRAG, FLOW_FINE_FRAG, FLOW_SMOOTH_FRAG, tr
 import { EXT_TRANSITIONS, extTransitionFrag } from './fx/moreTransitions';
 import { evalParam, resolveParams, DEFAULT_MOTION, DEFAULT_OPACITY, frameScaled } from '../Core/params';
 import { paramLocal, fieldOptionsActive, sourceAt } from '../Core/clipTime';
-import { getState } from '../Core/store';
+import { getState, set } from '../Core/store';
+import { lruVictims } from '../Core/lru';
 import { floodFill } from './fx/floodFill';
 
 export const BLEND_MODES = ['Normal', 'Darken', 'Multiply', 'Color Burn', 'Lighten', 'Screen', 'Color Dodge', 'Overlay', 'Soft Light', 'Hard Light', 'Difference', 'Exclusion', 'Linear Dodge (Add)'];
@@ -260,14 +261,32 @@ export function canvasFillOf(clip, ctx) {
 }
 export const hasGrade = (lu) => !!lu.lut || !!lu.inputLut || !isDefaultCurves(lu.curves) || Object.keys(LUMETRI_DEFAULTS).some((k) => lu[k] !== undefined && lu[k] !== LUMETRI_DEFAULTS[k]);
 
+// Per-clip GPU memory is capped: each entry can be a full source frame (a 4K RGBA texture is about 33 MB). What the frame
+// being drawn uses always stays, so a comp with more layers than the cap still renders.
+export const TEXTURE_CAPS = { source: { maxCount: 16, maxBytes: 512 * 1048576 }, pass: { maxCount: 8, maxBytes: 256 * 1048576 } };
+const PASS_MAPS = ['_fields', '_seg', '_mix', '_flowA', '_flowB', '_flowOut']; // per-clip caches made by passTarget()
+// everything a context owns: all of it is invalid after a context loss and is created again on demand
+const GL_CACHES = [...PASS_MAPS, '_dt', '_flows', '_lm', '_mesh', '_eqCdf', '_bucketTex'];
+
 export class Compositor {
   constructor(canvas) {
     const gl = (this.gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true, alpha: false }));
     if (!gl) throw new Error('WebGL2 unavailable');
     this.canvas = canvas;
-    this.w = 0; this.h = 0;
-    this.progs = new Map(); this.pool = []; this.srcTex = new Map(); this.fbos = new Map();
-    this.errors = {};
+    this.w = 0; this.h = 0; this.frame = 0; this.lost = false; this.restores = 0;
+    this.initResources();
+    // GPU driver reset, sleep / wake, too many contexts in the process, out of VRAM. preventDefault asks for a restore.
+    this.onLost = (e) => { e.preventDefault(); this.lost = true; console.warn('WebGL context lost'); this.notice('Graphics were reset. Restoring the picture…'); };
+    this.onRestored = () => { this.initResources(); this.lost = false; this.restores++; console.warn('WebGL context restored'); this.notice(null); };
+    canvas.addEventListener('webglcontextlost', this.onLost);
+    canvas.addEventListener('webglcontextrestored', this.onRestored);
+  }
+
+  /** Buffers, programs and caches of the current context (first use and after a restore; the old handles died with the old context). */
+  initResources() {
+    const gl = this.gl;
+    this.progs = new Map(); this.pool = []; this.srcTex = new Map(); this.errors = {};
+    for (const k of GL_CACHES) this[k] = undefined;
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -275,6 +294,56 @@ export class Compositor {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.disable(gl.BLEND);
+  }
+
+  /** On-screen message over a monitor while the picture is gone (nothing for an offscreen compositor). */
+  notice(text) {
+    const shown = !!this.noticeEl; this.noticeEl?.remove(); this.noticeEl = null;
+    if (!text) { if (shown) set((x) => ({ log: [...(x.log || []).slice(-49), 'Graphics restored'] })); return; }
+    const parent = this.canvas.isConnected && this.canvas.parentElement; if (!parent) return;
+    const el = document.createElement('div'); el.className = 'gl-lost-notice'; el.textContent = text;
+    el.style.cssText = 'position:absolute;left:8px;top:8px;z-index:5;padding:4px 8px;background:rgba(0,0,0,.75);color:#fff;font-size:12px;border-radius:3px;pointer-events:none';
+    parent.appendChild(el); this.noticeEl = el;
+    set((x) => ({ log: [...(x.log || []).slice(-49), text] }));
+  }
+  /** Resolves true once the context is usable again, false when it did not come back in time. */
+  whenRestored(ms = 15000) {
+    if (!this.lost && !this.gl.isContextLost()) return Promise.resolve(true);
+    return new Promise((res) => {
+      const end = (v) => { clearTimeout(timer); this.canvas.removeEventListener('webglcontextrestored', on); res(v); };
+      const on = () => end(true); const timer = setTimeout(() => end(false), ms);
+      this.canvas.addEventListener('webglcontextrestored', on); // runs after onRestored, so the caches are ready
+    });
+  }
+  /** Give the context back (a compositor that is finished). No restore is asked for, and no notice shows. */
+  dispose() {
+    this.canvas.removeEventListener('webglcontextlost', this.onLost); this.canvas.removeEventListener('webglcontextrestored', this.onRestored);
+    this.noticeEl?.remove(); this.noticeEl = null; this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+
+  // ---- per-clip caches ----
+  /** Free a source texture (and the text canvas of a text effect). */
+  releaseSource(key) {
+    const st = this.srcTex.get(key); if (!st) return;
+    this.gl.deleteTexture(st.tex); this.srcTex.delete(key);
+    if (key.startsWith('fxtext:')) this._textCv?.delete(key.slice(7));
+  }
+  releasePass(map, key) { const e = this[map]?.get(key); if (!e) return; this.gl.deleteTexture(e.tex); this.gl.deleteFramebuffer(e.fbo); this[map].delete(key); }
+  /** Least recently used entries over the caps go (end of every frame); what this frame used and static pictures stay. */
+  trimCaches() {
+    const src = []; for (const [key, st] of this.srcTex) src.push({ key, used: st.used || 0, bytes: st.w * st.h * 4, pinned: !!st.static || st.used === this.frame });
+    for (const key of lruVictims(src, TEXTURE_CAPS.source)) this.releaseSource(key);
+    for (const map of PASS_MAPS) {
+      if (!this[map]?.size) continue;
+      const items = []; for (const [key, e] of this[map]) items.push({ key, used: e.used || 0, bytes: e.w * e.h * 4, pinned: e.used === this.frame });
+      for (const key of lruVictims(items, TEXTURE_CAPS.pass)) this.releasePass(map, key);
+    }
+  }
+  /** Sizes of the caches (diagnostics and tests). */
+  cacheStats() {
+    let bytes = 0, passes = 0; for (const st of this.srcTex.values()) bytes += st.w * st.h * 4;
+    for (const map of PASS_MAPS) if (this[map]) for (const e of this[map].values()) { bytes += e.w * e.h * 4; passes++; }
+    return { source: this.srcTex.size, passes, bytes, pool: this.pool.length };
   }
 
   // ---- programs ----
@@ -305,6 +374,8 @@ export class Compositor {
     const gl = this.gl;
     for (const t of this.pool) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
     this.pool = []; this.w = w; this.h = h; this.canvas.width = w; this.canvas.height = h;
+    for (const [key, st] of [...this.srcTex]) if (!st.static) this.releaseSource(key);
+    for (const map of PASS_MAPS) if (this[map]) for (const key of [...this[map].keys()]) this.releasePass(map, key);
   }
   acquire() {
     const t = this.pool.pop(); if (t) return t;
@@ -328,6 +399,7 @@ export class Compositor {
     const gl = this.gl;
     let st = this.srcTex.get(key);
     if (!st) { const tex = gl.createTexture(); st = { tex, w: 0, h: 0, ok: false }; this.srcTex.set(key, st); gl.bindTexture(gl.TEXTURE_2D, tex); for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v); }
+    st.used = this.frame;
     const w = el.videoWidth || el.naturalWidth || el.width, h = el.videoHeight || el.naturalHeight || el.height;
     if (!w || !h || (el.readyState !== undefined && el.readyState < 2)) return st.ok ? st : null; // keep last good frame
     if (el.__ver !== undefined && st.ok && st.el === el && st.ver === el.__ver) return st; // versioned canvas (MOGRT) unchanged since the last upload
@@ -355,14 +427,7 @@ export class Compositor {
   /** Field Options pre-pass on the source frame (its own size), cached per clip. */
   fieldPass(key, st, fo) {
     const gl = this.gl; const pr = this.prog('field', FIELD_FRAG); if (!pr) return st;
-    this._fields = this._fields || new Map(); let e = this._fields.get(key);
-    if (!e || e.w !== st.w || e.h !== st.h) {
-      if (e) { gl.deleteTexture(e.tex); gl.deleteFramebuffer(e.fbo); }
-      const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, st.w, st.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-      const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-      e = { tex, fbo, w: st.w, h: st.h }; this._fields.set(key, e);
-    }
+    const e = this.passTarget('_fields', key, st.w, st.h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, e.fbo); gl.viewport(0, 0, e.w, e.h); this.use(pr);
     this.bind(0, st.tex); this.i1(pr, 'u_tex', 0); this.f1(pr, 'u_h', st.h);
     this.i1(pr, 'u_rev', fo.reverse ? 1 : 0); this.i1(pr, 'u_dei', fo.deinterlace ? 1 : 0); this.i1(pr, 'u_flk', fo.flicker ? 1 : 0);
@@ -373,14 +438,7 @@ export class Compositor {
   /** Remove Background: cut the source frame (own size) with the person mask; Threshold / Feather / Choke shape the edge. */
   segPass(key, st, mk, v) {
     const gl = this.gl; const pr = this.prog('seg', SEG_FRAG); if (!pr) return st;
-    this._seg = this._seg || new Map(); let e = this._seg.get(key);
-    if (!e || e.w !== st.w || e.h !== st.h) {
-      if (e) { gl.deleteTexture(e.tex); gl.deleteFramebuffer(e.fbo); }
-      const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, st.w, st.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      for (const [k, x] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, x);
-      const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-      e = { tex, fbo, w: st.w, h: st.h }; this._seg.set(key, e);
-    }
+    const e = this.passTarget('_seg', key, st.w, st.h);
     const mt = this.dataTexture(`mask:${mk.key}`, mk.w, mk.h, mk.data);
     gl.bindFramebuffer(gl.FRAMEBUFFER, e.fbo); gl.viewport(0, 0, e.w, e.h); this.use(pr);
     this.bind(0, st.tex); this.i1(pr, 'u_tex', 0); this.bind(1, mt); this.i1(pr, 'u_mask', 1);
@@ -391,14 +449,7 @@ export class Compositor {
   /** Frame Blending: mix two source frames (own size) into a cached target. */
   mixPass(key, a, b, w) {
     const gl = this.gl; const pr = this.prog('mix', MIX_FRAG); if (!pr || a.w !== b.w || a.h !== b.h) return a;
-    this._mix = this._mix || new Map(); let e = this._mix.get(key);
-    if (!e || e.w !== a.w || e.h !== a.h) {
-      if (e) { gl.deleteTexture(e.tex); gl.deleteFramebuffer(e.fbo); }
-      const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, a.w, a.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-      const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-      e = { tex, fbo, w: a.w, h: a.h }; this._mix.set(key, e);
-    }
+    const e = this.passTarget('_mix', key, a.w, a.h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, e.fbo); gl.viewport(0, 0, e.w, e.h); this.use(pr);
     this.bind(0, a.tex); this.bind(1, b.tex); this.i1(pr, 'u_a', 0); this.i1(pr, 'u_b', 1); this.f1(pr, 'u_w', w);
     this.quad(); gl.viewport(0, 0, this.w, this.h);
@@ -415,6 +466,7 @@ export class Compositor {
       const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
       e = { tex, fbo, w, h }; this[map].set(key, e);
     }
+    e.used = this.frame;
     return e;
   }
   /** Optical Flow: the frame between a and b at w, with motion estimated on a grid of at most 128 cells across */
@@ -856,13 +908,19 @@ export class Compositor {
   }
   /** Show a pre-rendered preview frame (element) directly. Returns false if the element has no frame yet. */
   blitElement(el, size) {
-    this.resize(size.w, size.h); const st = this.upload('preview-blit', el); if (!st) return false;
-    this.target(null); const bl = this.prog('blit', BLIT_FRAG); this.use(bl); this.bind(0, st.tex); this.i1(bl, 'u_tex', 0); this.quad(); return true;
+    if (this.lost || this.gl.isContextLost()) return false;
+    this.frame++; this.resize(size.w, size.h); const st = this.upload('preview-blit', el); if (!st) return false;
+    this.target(null); const bl = this.prog('blit', BLIT_FRAG); this.use(bl); this.bind(0, st.tex); this.i1(bl, 'u_tex', 0); this.quad(); this.trimCaches(); return true;
   }
 
   /** state: { sequence, seqs, playhead }, deps: { elementFor(clip) }. Draws to the canvas. */
   render(state, deps, size) {
-    this.resize(size.w, size.h); this.mcView = !!state.mcView;
+    const lostNow = () => this.lost || this.gl.isContextLost();
+    if (lostNow()) return false; // nothing can be drawn until the restore; a caller that needs the frame waits with whenRestored()
+    try { return this.renderFrame(state, deps, size); } catch (e) { if (lostNow()) return false; throw e; } // lost in the middle of the frame
+  }
+  renderFrame(state, deps, size) {
+    this.frame++; this.resize(size.w, size.h); this.mcView = !!state.mcView;
     const lookup = (id) => (id === state.sequence.id ? state.sequence : state.seqs?.[id]);
     // size.alpha: transparent background (export with an alpha channel); size.read: Uint8Array that receives the RGBA frame
     // (bottom row first, colour premultiplied by alpha) read from the composite itself, since the canvas has no alpha
@@ -870,7 +928,7 @@ export class Compositor {
     if (size.read) { const gl = this.gl; this.target(acc); gl.readPixels(0, 0, size.w, size.h, gl.RGBA, gl.UNSIGNED_BYTE, size.read); }
     this.target(null);
     const bl = this.prog('blit', BLIT_FRAG); this.use(bl); this.bind(0, acc.tex); this.i1(bl, 'u_tex', 0); this.quad();
-    this.release(acc);
+    this.release(acc); this.trimCaches();
     return true;
   }
 }

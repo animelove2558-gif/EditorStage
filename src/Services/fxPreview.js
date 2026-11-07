@@ -33,7 +33,7 @@ export function previewable(item) {
 }
 /** Draw item at time t (seconds, loops) into a 2D canvas of PW x PH. Returns false if nothing could be drawn. */
 export function drawPreview(ctx2d, item, t) {
-  if (!init() || !previewable(item)) return false;
+  if (!init() || !previewable(item) || C.gl.isContextLost()) return false; // after a restore the test pictures upload again
   const a = src(0), b = src(1); if (!a || !b) return false;
   let out = a;
   try {

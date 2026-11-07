@@ -35,6 +35,9 @@ function init() {
     glCanvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(16, 16) : document.createElement('canvas');
     gl = glCanvas.getContext('webgl2', { premultipliedAlpha: true, alpha: true, preserveDrawingBuffer: true, antialias: false });
     if (!gl) throw new Error('no webgl2');
+    // context loss: everything cached belongs to the dead context, so drop it; the next use starts over
+    glCanvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); progs.clear(); texCache.length = 0; });
+    glCanvas.addEventListener('webglcontextrestored', () => { progs.clear(); texCache.length = 0; quad = null; gl = null; });
     quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   } catch (e) { failed = true; gl = null; console.warn('MOGRT: WebGL2 unavailable, GPU effects disabled', e); }
