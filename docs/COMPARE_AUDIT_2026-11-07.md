@@ -57,6 +57,7 @@ behaviour only (README, ROADMAP, `docs/gaps.md`, `AGENTS.md`, crate names). Noth
 - Size: S. Tier: T1.
 
 ### C-04 Playback element pool is never pruned
+- Work status (2026-11-07, T2): Code done, unit tested (`scripts/test_lru.mjs`), not yet run in the real app: the Electron lock was unavailable. Memory not measured, before or after. `src/Services/media.js` caps 12 video and 24 audio elements.
 - Status: CONFIRMED (code path); memory effect SUSPECTED until measured
 - Evidence: `src/Services/media.js:139` `pool`; entries are added at `:159` (one `<video>`/`<audio>` per clip key) and
   removed only by `dropElement` (`:162`) on a changed file or `invalidateMedia` / `releaseKeyed` (`:168`, `:290`). The idle
@@ -72,6 +73,7 @@ behaviour only (README, ROADMAP, `docs/gaps.md`, `AGENTS.md`, crate names). Noth
 - Size: M. Tier: T2.
 
 ### C-05 GPU textures and framebuffers are never released
+- Work status (2026-11-07, T2): Code done, not yet run in the real app: the Electron lock was unavailable. Memory not measured. `Compositor.trimCaches` caps source textures at 16 / 512 MB and each pass cache at 8 / 256 MB; `resize` frees them.
 - Status: CONFIRMED (code path)
 - Evidence: `src/Renderers/Compositor.js:329-330` creates a texture per `key` in `srcTex` and no code deletes an entry (the
   only `srcTex` references outside the class are reads: `Compositor.js:733`, `TransformOverlay.jsx:19`). Keys include
@@ -85,6 +87,7 @@ behaviour only (README, ROADMAP, `docs/gaps.md`, `AGENTS.md`, crate names). Noth
 - Size: M. Tier: T2.
 
 ### C-06 No WebGL context loss or restore handling
+- Work status (2026-11-07, T2): Code done, not yet run in the real app: the Electron lock was unavailable. Lost and restored handlers rebuild all GL resources; monitors show a notice; export redraws the frame or fails with a message.
 - Status: CONFIRMED
 - Evidence: no `webglcontextlost` / `webglcontextrestored` listener anywhere in `src/` (grep). `Compositor.js:265` creates
   the context; all programs, textures and VAOs live in JS maps that become invalid after a loss. Up to six contexts exist at
@@ -97,6 +100,7 @@ behaviour only (README, ROADMAP, `docs/gaps.md`, `AGENTS.md`, crate names). Noth
 - Size: M. Tier: T2.
 
 ### C-07 Unstable GPU switches are forced on, and there is no fallback after repeated GPU crashes
+- Work status (2026-11-07, T2): (b) Module and tests done (`electron/gpuGuard.js`, `scripts/test_gpuguard.mjs`, 12 passed). NOT ACTIVE: `electron/main.js` must call `require('./gpuGuard').install({ app, ipcMain })` before app ready, and there is no notice or "Use default graphics" button yet.
 - Status: CONFIRMED (flags present); impact SUSPECTED
 - Evidence: `electron/main.js:16-18` appends `enable-unsafe-webgpu`, `enable-features=WebCodecs,VaapiVideoDecoder,...` and
   `ignore-gpu-blocklist`. The code uses WebGL2 only (the audit of 2 Nov found WebGPU/WebCodecs files were dead code), so the
@@ -121,6 +125,7 @@ behaviour only (README, ROADMAP, `docs/gaps.md`, `AGENTS.md`, crate names). Noth
 - Size: S. Tier: T1.
 
 ### C-09 Recovery journal is minutes behind: default auto-save is every 5 minutes
+- Work status (2026-11-07, T2): Done and unit tested (`scripts/test_versions.mjs`); recovery dialog not exercised in the real app. Journal written about 2 s after the last edit, gap at least 20 times the write cost; off when auto-save is off.
 - Status: CONFIRMED
 - Evidence: `src/Core/prefs.js:8` `autoSaveMin: 5`; `Services/versions.js:155-157` writes on an interval. filmcraft's README
   says a recovery journal is written about one second after each edit.
@@ -161,6 +166,7 @@ behaviour only (README, ROADMAP, `docs/gaps.md`, `AGENTS.md`, crate names). Noth
 - Size: S. Tier: T1.
 
 ### C-13 Undo history keeps whole-sequence snapshots; stacks of deleted sequences stay
+- Work status (2026-11-07, T2): (b) Done and unit tested. Measured with 2,000 clips in Node: 100 steps hold 247 MB of heap (each step is a whole sequence copy, more than this entry assumed); a budget of 20 snapshots holds 50 MB. Default budget 100 M JSON characters per sequence, at least 5 steps kept.
 - Status: SUSPECTED
 - Evidence: `src/Core/store.js:160-213` records `before` / `after` sequence objects per step (100 steps per sequence,
   `:125`); the code already keeps unchanged sub-objects shared (`:184`), which limits cost, but `stacks` (`:112`) is never
@@ -188,6 +194,7 @@ behaviour only (README, ROADMAP, `docs/gaps.md`, `AGENTS.md`, crate names). Noth
 - Size: S. Tier: T1.
 
 ### C-16 Export frames cross IPC as full raw buffers
+- Work status (2026-11-07, T2): Partly done: frames without alpha go as rgb24 (25% fewer IPC bytes; H.264 and ProRes output identical to rgba, largest difference 0, `scripts/test_export_memory.mjs`), audio decode cache freed after each mix. Peak memory of a real export not measured; export not yet run in the real app: the Electron lock was unavailable.
 - Status: SUSPECTED (performance and memory pressure)
 - Evidence: `electron/media.js:187` `job:write` receives each raw frame from the renderer (`ffjobs.js:90`). Back-pressure is
   handled correctly (`drain`), but a 4K RGBA frame is about 33 MB copied per frame through structured clone.
@@ -238,6 +245,7 @@ See C-01, C-02, C-07, C-09. Counted once there.
 - Size: S. Tier: T1.
 
 ### G-06 Audio mixer depth: sends, submixes, automation modes
+- Work status (2026-11-07, T2): Not started. Size L, touching playback, export and the mixer UI; it needs real-app verification.
 - Status: partly. A mixer panel exists (`Panels`/audio files mention track mixer); no submix, send or Read / Latch /
   Touch / Write automation recording was found (`grep` for submix, send, latch finds nothing).
 - Reference: README Audio (insert slots, sends, submixes, mix track, console-style automation).
@@ -254,6 +262,7 @@ See C-01, C-02, C-07, C-09. Counted once there.
 - Size: M. Tier: T1.
 
 ### G-08 OMF export
+- Work status (2026-11-07, T2): Not done. No OMF reader exists on this machine to verify output, and the entry itself says to do it only if a Pro Tools user needs it.
 - Status: CONFIRMED missing (already recorded as a limitation in `docs/PROGRESS.md` Phase 9: no OMF reader on this machine
   to verify output).
 - Reference: README Interchange, OMF 2.0.
@@ -261,6 +270,7 @@ See C-01, C-02, C-07, C-09. Counted once there.
 - Size: L. Tier: T2.
 
 ### G-09 Exact integer time base
+- Work status (2026-11-07, T2): Drift test written. Model (`scripts/test_drift.mjs`, cut at every frame for 2 hours at 29.97, 23.976 and 59.94, plus EDL, FCPXML and Premiere XML): no drift, 47 passed. It assumes seeks round to the microsecond; if they truncate, 3 of 215,784 frames at 29.97 land one frame early. Real-file check (`scripts/e2e/drift.cjs`) written but NOT run, so the decision is still open. Decimal rates slip one source frame after 9.27 h (29.97), 11.59 h (23.976), 4.63 h (59.94).
 - Status: SUSPECTED gap (not verified)
 - Reference: all edits on 254,016,000,000 ticks per second so 23.976, 29.97 drop-frame and 59.94 never drift.
 - Evidence: no tick-based time in `src/` (grep for ticks and the constant finds only unrelated files); sequence time is

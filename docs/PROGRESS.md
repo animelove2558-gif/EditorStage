@@ -507,3 +507,18 @@ commit แยกทีละข้อ `[Phase 9.1]` … `[Phase 9.13]`. ผล�
 | Proxy / Relink | ✅ | ✅ | 🟡 |
 | Stickers, Templates, Text-to-Speech, Audio library, Beat Sync | ❌ (ตัดออก) | 🟡 | ✅ (ออนไลน์) |
 | Command Palette | ❌ (ตัดออก) | ❌ | ❌ |
+
+## Audit 2026-11-07: T2 items (`docs/COMPARE_AUDIT_2026-11-07.md`)
+
+Status per item is in the audit file. Summary:
+
+| Item | Status |
+|------|--------|
+| C-04, C-05, C-06 | 🟡 Code done; real-app run and memory measurement still pending |
+| C-07b | 🟡 Module and tests done; not wired into `electron/main.js`, no UI |
+| C-09, C-13b | ✅ Unit tested; C-09 recovery dialog not exercised in the real app |
+| C-16 | 🟡 rgb24 frames and decode cache done; real export not measured |
+| G-06, G-08 | ⬜ Not done |
+| G-09 drift test | 🟡 Model passes (no drift over 2 hours); real-file check `scripts/e2e/drift.cjs` not run, decision open |
+
+Unit suites added to `npm test`: `test_lru`, `test_gpuguard`, `test_export_memory`, `test_drift`. Measurement tool: `scripts/e2e/memgrowth.cjs`.
