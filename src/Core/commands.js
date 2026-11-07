@@ -10,6 +10,7 @@ import { peaksFor } from '../Services/waveform';
 import { editInAudioStage } from '../Services/audiostage';
 import { commitRevision, adoptAutosaveHistory, latestRevision, historyDirFor, restoreRevision } from '../Services/versions';
 import { projectJson, parseProject } from './projectFile';
+import { markersToCsv } from '../Services/markersCsv';
 import { trimHead, sourceAt } from './clipTime';
 import { DEFAULT_MOTION } from './params';
 import { markerAt } from './markers';
@@ -652,6 +653,7 @@ export const commands = {
   'file.healthCheck': dialog('healthCheck'),
   'file.exportSelection': exportInterchange('xmeml'),
   'file.exportFCPXML': exportInterchange('fcpxml'),
+  'file.exportOTIO': exportInterchange('otio'),
   'file.exportEDL': exportInterchange('edl'),
   'file.exportAAF': exportAAF,
   'file.projSettings.general': dialog('projectSettings'),
@@ -660,6 +662,7 @@ export const commands = {
   'app.quit': () => window.editorstage.windowControl('close'),
   'help.about': dialog('about'),
   'help.licenses': () => openDialog('licenses'),
+  'help.openLogs': () => window.editorstage.openLogFolder(),
   'help.licensesFolder': async () => { const p = await window.editorstage.licensesDir(); if (!p) return notify('The license folder is added when the installer is built (npm run dist)'); const r = await window.editorstage.openExternal(p); if (r) notify(`Cannot open ${p}: ${r}`); },
 
   // Edit
@@ -788,6 +791,33 @@ export const commands = {
 
   // Markers
   'marker.add': addMarker,
+  // SCC (CEA-608) captions for broadcast delivery; the file carries Latin letters only
+  'file.importImageSequence': async () => { const { importImageSequence } = await import('../Services/imageSequence'); await importImageSequence(notify); },
+  'captions.exportScc': async () => {
+    const s = getState(); const sel = s.sequence.clips.find((c) => s.selection.includes(c.id) && c.caption);
+    const tid = sel?.track || s.sequence.tracks.find((t) => t.kind === 'caption' && s.sequence.clips.some((c) => c.track === t.id && c.caption))?.id;
+    if (!tid) return notify('No caption track to export');
+    const path = await window.editorstage.saveDialog('export', `${s.sequence.name || s.projectName}.scc`, 'scc'); if (!path) return;
+    const { writeSCC } = await import('../Services/sccCaptions');
+    const caps = s.sequence.clips.filter((c) => c.track === tid && c.caption && c.enabled !== false).map((c) => ({ start: c.start, dur: c.dur, text: c.caption.text }));
+    const r = writeSCC(caps, s.sequence.fps);
+    try { await window.editorstage.writeFile(path, r.text); } catch (e) { return notify(`SCC export failed: ${e.message}`); }
+    notify(`Saved ${path}${r.replaced ? ` (${r.replaced} characters outside CEA-608, such as Thai, were replaced by ?)` : ''}${r.cut ? ` (${r.cut} captions had more than 2 lines of 32 characters and were shortened)` : ''}`);
+  },
+  'captions.importScc': async () => {
+    const paths = await window.editorstage.openDialog('scc', false); if (!paths.length) return;
+    const { parseSCC } = await import('../Services/sccCaptions'); const { placeCaptions } = await import('../Services/ai/stt');
+    let caps; try { caps = parseSCC(await window.editorstage.readText(paths[0]), getState().sequence.fps); } catch (e) { return notify(`SCC import failed: ${e.message}`); }
+    if (!caps.length) return notify('No pop-on captions found in the SCC file');
+    const flat = (t) => t.split(String.fromCharCode(10)).join(' ');
+    placeCaptions(caps.map((c) => ({ t0: c.start, t1: c.start + c.dur, text: flat(c.text), words: [{ text: flat(c.text), t0: c.start, t1: c.start + c.dur }] })), { replace: false, language: 'SCC' });
+    notify(`Imported ${caps.length} captions from ${paths[0]}`);
+  },
+  'marker.exportCsv': async () => {
+    const s = getState(); if (!s.sequence.markers.length) return notify('No sequence markers to export');
+    const path = await window.editorstage.saveDialog('export', `${s.sequence.name || s.projectName}-markers.csv`, 'csv'); if (!path) return;
+    try { await window.editorstage.writeFile(path, markersToCsv(s.sequence.markers, s.sequence.fps)); notify(`Exported ${s.sequence.markers.length} markers to ${path}`); } catch (e) { notify(`Marker export failed: ${e.message}`); }
+  },
   /** Clear Selected Marker (Ctrl+Alt+M): the marker clicked last, else the sequence marker at the playhead */
   'marker.clearSelected': () => {
     const s = getState(); const id = s.selectedMarker && s.sequence.markers.some((m) => m.id === s.selectedMarker) ? s.selectedMarker : markerAt(s.sequence.markers, s.playhead, s.sequence.fps)?.id;

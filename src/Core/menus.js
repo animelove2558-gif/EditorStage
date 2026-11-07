@@ -58,13 +58,13 @@ export const MENUS = [
     m('Close', 'file.close', 'Ctrl+W'), m('Close Project', 'file.closeProject', 'Ctrl+Shift+W'), S,
     m('Save', 'file.save', 'Ctrl+S'), m('Save As...', 'file.saveAs', 'Ctrl+Shift+S'), m('Save a Copy...', 'file.saveCopy', 'Ctrl+Alt+S'), m('Revert', 'file.revert'), S,
     m('Save Revision...', 'file.saveRevision', 'Ctrl+Alt+R'), m('Version History...', 'panel.versions'), m('Cold Archive Manager...', 'panel.archive'), S,
-    m('Capture...', 'file.capture', 'F5'), m('Import...', 'file.import', 'Ctrl+I'), m('Import Sequence (XML / FCPXML / EDL)...', 'file.importSequence'), S,
+    m('Capture...', 'file.capture', 'F5'), m('Import...', 'file.import', 'Ctrl+I'), m('Import Sequence (XML / FCPXML / EDL / OTIO)...', 'file.importSequence'), m('Import Image Sequence...', 'file.importImageSequence'), S,
     m('Link Media...', 'file.linkMedia'), m('Make Offline...', 'file.makeOffline'),
     sub('Proxy', [m('Create Proxies...', 'media.createProxies'), m('Attach Proxies...', 'media.attachProxy'), m('Reconnect Full Resolution Media (Detach Proxy)', 'media.detachProxy'), S, m('Toggle Proxies', 'view.toggleProxies')]), S,
     sub('Export', [
       m('Media...', 'file.exportMedia', 'Ctrl+M'), m('Export Queue...', 'file.exportQueue'), m('Project Health Check...', 'file.healthCheck'), m('Frame...', 'file.exportFrame', 'Ctrl+Shift+E'), m('Selection as Premiere XML (FCP7 XML)...', 'file.exportSelection'), S,
       // OMF is not offered (AAF replaces it); AAF carries the audio tracks with embedded PCM for a DAW
-      m('Final Cut Pro XML (FCPXML 1.9)...', 'file.exportFCPXML'), m('EDL (CMX3600)...', 'file.exportEDL'), m('AAF (Embedded Audio)...', 'file.exportAAF'),
+      m('Final Cut Pro XML (FCPXML 1.9)...', 'file.exportFCPXML'), m('OpenTimelineIO (.otio)...', 'file.exportOTIO'), m('EDL (CMX3600)...', 'file.exportEDL'), m('AAF (Embedded Audio)...', 'file.exportAAF'),
     ]),
     sub('Project Settings', [m('General...', 'file.projSettings.general'), m('Scratch Disks...', 'file.projSettings.scratch'), m('Ingest Settings...', 'file.projSettings.ingest')]), S,
     m('Exit', 'app.quit', 'Ctrl+Q'),
@@ -106,14 +106,14 @@ export const MENUS = [
     m('Trim Edit', 'seq.trimMode', 'Shift+T'), m('Extend Selected Edit to Playhead', 'seq.extendEdit', 'E'), m('Select Clip at Playhead', 'seq.selectAtPlayhead', 'D'), S,
     m('Zoom In', 'seq.zoomIn', '='), m('Zoom Out', 'seq.zoomOut', '-'), S,
     m('Snap in Timeline', 'seq.snap', 'S'), m('Linked Selection', 'seq.linked', 'Ctrl+Shift+L'), S,
-    m('Add Video Track', 'timeline.addTrack.video'), m('Add Audio Track', 'timeline.addTrack.audio'), m('Add Caption Track', 'timeline.addCaptionTrack'), m('Delete Empty Tracks', 'timeline.deleteEmptyTracks'), S,
+    m('Add Video Track', 'timeline.addTrack.video'), m('Add Audio Track', 'timeline.addTrack.audio'), m('Add Caption Track', 'timeline.addCaptionTrack'), m('Import Captions (SCC)...', 'captions.importScc'), m('Export Captions (SCC)...', 'captions.exportScc'), m('Delete Empty Tracks', 'timeline.deleteEmptyTracks'), S,
     m('Expand All Tracks', 'timeline.expandTracks'), m('Minimize All Tracks', 'timeline.minimizeTracks'),
   ] },
   { label: 'Markers', items: [
     m('Mark In', 'marker.markIn', 'I'), m('Mark Out', 'marker.markOut', 'O'), m('Mark Clip', 'marker.markClip', 'X'), m('Mark Selection', 'marker.markSelection', '/'), S,
     m('Go to In', 'marker.goIn', 'Shift+I'), m('Go to Out', 'marker.goOut', 'Shift+O'), S,
     m('Clear In', 'marker.clearIn', 'Ctrl+Shift+I'), m('Clear Out', 'marker.clearOut', 'Ctrl+Shift+O'), m('Clear In and Out', 'marker.clearInOut', 'Ctrl+Shift+X'), S,
-    m('Add Marker', 'marker.add', 'M'), m('Go to Next Marker', 'marker.next', 'Shift+M'), m('Go to Previous Marker', 'marker.prev', 'Ctrl+Shift+M'), m('Edit Marker...', 'marker.edit'), m('Clear Selected Marker', 'marker.clearSelected', 'Ctrl+Alt+M'), m('Clear All Markers', 'marker.clear', 'Ctrl+Alt+Shift+M'),
+    m('Add Marker', 'marker.add', 'M'), m('Go to Next Marker', 'marker.next', 'Shift+M'), m('Go to Previous Marker', 'marker.prev', 'Ctrl+Shift+M'), m('Edit Marker...', 'marker.edit'), m('Clear Selected Marker', 'marker.clearSelected', 'Ctrl+Alt+M'), m('Clear All Markers', 'marker.clear', 'Ctrl+Alt+Shift+M'), S, m('Export Markers as CSV...', 'marker.exportCsv'),
   ] },
   { label: 'Graphics and Titles', items: [
     sub('New Layer', [m('Text', 'gfx.newText', 'Ctrl+T'), m('Vertical Text', 'gfx.newVText'), S, m('Rectangle', 'gfx.newRect'), m('Ellipse', 'gfx.newEllipse'), m('Polygon', 'gfx.newPolygon')]),
@@ -142,5 +142,5 @@ export const MENUS = [
     S, m('Toggle Right Panel Rail', 'view.toggleRail'), S,
     ...PANELS.filter((p) => !p.hidden).map((p) => m(p.name, `panel.${p.id}`)),
   ] },
-  { label: 'Help', items: [m('Keyboard Shortcuts...', 'edit.shortcuts'), S, m('Third-Party Notices...', 'help.licenses'), S, m('About EditorStage...', 'help.about')] },
+  { label: 'Help', items: [m('Keyboard Shortcuts...', 'edit.shortcuts'), S, m('Open Log Folder', 'help.openLogs'), m('Third-Party Notices...', 'help.licenses'), S, m('About EditorStage...', 'help.about')] },
 ];

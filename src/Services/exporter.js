@@ -25,6 +25,15 @@ export const PRESETS = {
   'Apple ProRes 422 (MOV)': { ext: 'mov', video: ['-c:v', 'prores_ks', '-profile:v', '2', '-pix_fmt', 'yuv422p10le'], audio: ['-c:a', 'pcm_s16le'] },
   'Apple ProRes 422 HQ (MOV)': { ext: 'mov', video: ['-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le'], audio: ['-c:a', 'pcm_s16le'] },
   'Apple ProRes 4444 with Alpha (MOV)': { ext: 'mov', alpha: true, video: ['-c:v', 'prores_ks', '-profile:v', '4', '-pix_fmt', 'yuva444p10le', '-alpha_bits', '16', '-vendor', 'apl0'], audio: ['-c:a', 'pcm_s16le'] },
+  // Avid DNxHR (resolution independent; the FFmpeg encoder is "dnxhd"). MXF needs 48 kHz audio, which the export always produces.
+  'Avid DNxHR LB (MOV)': { ext: 'mov', video: ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_lb', '-pix_fmt', 'yuv422p'], audio: ['-c:a', 'pcm_s16le'] },
+  'Avid DNxHR SQ (MOV)': { ext: 'mov', video: ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_sq', '-pix_fmt', 'yuv422p'], audio: ['-c:a', 'pcm_s16le'] },
+  'Avid DNxHR HQ (MOV)': { ext: 'mov', video: ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_hq', '-pix_fmt', 'yuv422p'], audio: ['-c:a', 'pcm_s16le'] },
+  'Avid DNxHR HQX 10-bit (MOV)': { ext: 'mov', tenBit: true, video: ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_hqx', '-pix_fmt', 'yuv422p10le'], audio: ['-c:a', 'pcm_s16le'] },
+  'Avid DNxHR 444 10-bit (MOV)': { ext: 'mov', tenBit: true, video: ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_444', '-pix_fmt', 'yuv444p10le'], audio: ['-c:a', 'pcm_s16le'] },
+  'MXF OP1a DNxHR HQ': { ext: 'mxf', video: ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_hq', '-pix_fmt', 'yuv422p', '-f', 'mxf'], audio: ['-c:a', 'pcm_s24le', '-ar', '48000'] },
+  // one PNG per frame, with transparency: <name>_00001.png ... next to the chosen name (imageSeq: no single file, no temporary name)
+  'PNG Sequence (RGBA)': { ext: 'png', alpha: true, imageSeq: true, video: ['-c:v', 'png', '-pix_fmt', 'rgba'], audio: null },
   'VP9 (WebM)': { ext: 'webm', video: ['-c:v', 'libvpx-vp9', '-crf', '30', '-b:v', '0', '-pix_fmt', 'yuv420p'], audio: ['-c:a', 'libopus'] },
   'Animated GIF': { ext: 'gif', video: ['-vf', 'vflip,split[a][b];[a]palettegen[p];[b][p]paletteuse'], audio: null },
   'Preview (H.264, fast)': { ext: 'mp4', hidden: true, video: ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-pix_fmt', 'yuv420p'], audio: null },
@@ -333,7 +342,12 @@ const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(
 /** The file an export renders into: <name>.es-part.<ext> beside the target (same container), renamed when finished. */
 export const partPath = (p) => p.replace(/(\.[^.\\/]+)?$/, (x) => `.es-part${x}`);
 const ipcError = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, '');
+/** <name>.png -> <name>_%05d.png: the numbered frames of an image sequence export. */
+export const sequencePattern = (p) => p.replace(/(\.[^.\\/]+)?$/, '_%05d$1');
 export async function exportSequence(opts, onProgress, cancel) {
+  if (PRESETS[opts.preset]?.imageSeq) { // many files: written under their final names (a cancelled export leaves the frames made so far)
+    try { return await renderExport({ ...opts, path: sequencePattern(opts.path), finalPath: opts.path }, onProgress, cancel); } catch (e) { return { ok: false, error: ipcError(e) }; }
+  }
   // render into a temporary name and rename it once the encoder finished: a cancelled or failed export never leaves a
   // half-written file, and an existing file of the same name stays intact until the new one is complete
   const es = window.editorstage; const part = partPath(opts.path);

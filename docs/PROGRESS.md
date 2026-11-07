@@ -522,3 +522,22 @@ Status per item is in the audit file. Summary:
 | G-09 drift test | 🟡 Model passes (no drift over 2 hours); real-file check `scripts/e2e/drift.cjs` not run, decision open |
 
 Unit suites added to `npm test`: `test_lru`, `test_gpuguard`, `test_export_memory`, `test_drift`. Measurement tool: `scripts/e2e/memgrowth.cjs`.
+
+## Audit 2026-11-07: T1 items (`docs/COMPARE_AUDIT_2026-11-07.md`)
+
+| Item | Status |
+|------|--------|
+| C-01 | ✅ `render-process-gone`, `unresponsive`, GPU `child-process-gone`: notice, reload, stop after 3 in a minute. Run for real with `forcefullyCrashRenderer` in `scripts/e2e/crash.cjs` (9 checks) |
+| C-02 | ✅ Rotating log in `userData/logs` (main errors, page errors, ffmpeg exits, probe timeouts), Help > Open Log Folder. `test_crashlog.mjs`, `crash.cjs` |
+| C-03 | ✅ Root error boundary and one per dock panel with Reload and Save Project As. Code path built and bundled; not triggered by a real render error in the app |
+| C-07a, C-07b | ✅ Unsafe WebGPU / blocklist flags removed; `gpuGuard` wired in `main.js` with a "Use default graphics" notice. The software fallback itself was only unit tested |
+| C-08 | ✅ On-monitor message when the compositor cannot be created (not run with graphics really disabled) |
+| C-10, C-14, C-15 | ✅ Protocol handlers return 400/404; lock first; `asarUnpack` (config tested, no installer build run) |
+| C-11 | ✅ Probe killed after 30 s (code only; no stalled-file run) |
+| C-12 | 🟡 Resume on `statechange` and sink re-applied on `devicechange`; a closed context is not rebuilt; no device was unplugged |
+| C-13a | ✅ `pruneStacks` (`test_store`) |
+| G-02 | ✅ OTIO import/export, round trip tested (`test_interchange`) |
+| G-03 | ✅ DNxHR LB/SQ/HQ/HQX/444 (MOV) and MXF OP1a: real exports in `scripts/e2e/gaps.cjs`, `test_presets` |
+| G-04 | ✅ PNG sequence export with alpha (real export, `gaps.cjs`); import converts a numbered folder to one clip (FFmpeg conversion tested; the menu command was not clicked in the app) |
+| G-05 | ✅ Markers CSV with BOM (`test_interchange`) |
+| G-07 | ✅ SCC export/import, pop-on only, Latin letters only (Thai is replaced by ?). `test_scc` |

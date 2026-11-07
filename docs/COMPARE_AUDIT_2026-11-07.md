@@ -298,3 +298,12 @@ hardware-decoder selection, UI localization (filmcraft targets 12 languages, 3 m
 
 Suggested order of work: C-02 and C-01 first (they make every later crash diagnosable), then C-04, C-05, C-06 together
 (one eviction design for elements, textures and contexts), C-07, C-09, C-03, C-08, then the T1 gaps.
+
+## T1 status (2026-11-07, after implementation)
+
+Done and run: C-01 (crash e2e with a forcefully crashed renderer, simulated hang and GPU loss), C-02, C-10, C-13a, C-14, G-02, G-03
+(real DNxHR and MXF exports), G-04 export (real PNG sequence with alpha), G-05, G-07. Done, covered by unit or config tests only:
+C-03 (never triggered by a real render error), C-07a, C-07b wiring (software fallback not run), C-08, C-11, C-12 (resume and
+sink re-apply only; a closed context is not rebuilt), C-15, G-04 import (conversion tested, menu command not clicked).
+Per-item table: `docs/PROGRESS.md`. Tests: `test_crashlog`, `test_scc`, `test_presets`, `test_interchange`, `test_store`,
+`scripts/e2e/crash.cjs`, `scripts/e2e/gaps.cjs`.

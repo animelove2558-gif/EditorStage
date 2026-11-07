@@ -29,5 +29,18 @@ ok('scc: overlapping captions keep increasing timecodes', (() => { const t = wri
 ok('scc: not an SCC file is refused', (() => { try { parseSCC('WEBVTT'); return false; } catch (e) { return /SCC/.test(e.message); } })());
 ok('scc: an empty list gives a valid header-only file', parseSCC(writeSCC([], 30).text, 30).length === 0);
 
+// image sequence detection (G-04)
+{
+  const { findSequences, sequenceArgs, sequencePattern } = await import('../src/Services/imageSequence.js');
+  const names = ['shot_0001.png', 'shot_0002.png', 'shot_0003.png', 'shot_0007.png', 'shot_0008.png', 'other10.jpg', 'other11.jpg', 'other12.jpg', 'other13.jpg', 'notes.txt', 'single_01.png', 'clip.mp4'];
+  const r = findSequences(names);
+  ok('sequences: the longest numbered run comes first, gaps split runs', r.length === 2 && r[0].prefix === 'other' && r[0].count === 4 && r[1].prefix === 'shot_' && r[1].count === 3 && r[1].missing === 2, JSON.stringify(r));
+  ok('sequences: padding and first number are kept', r[1].pad === 4 && r[1].first === 1 && r[1].last === 3 && r[0].first === 10 && r[0].pad === 2);
+  ok('sequences: a single numbered file or other types are not a sequence', findSequences(['a_01.png', 'b.png', 'c_02.txt', 'd_03.mov']).length === 0);
+  ok('sequences: ffmpeg pattern for a Windows folder with spaces', sequencePattern('D:\\My Frames', r[1]) === 'D:\\My Frames\\shot_%04d.png');
+  const a = sequenceArgs('/f', r[1], 24, '/o.mp4', false);
+  ok('sequences: arguments name rate, start number and frame count', a.join(' ').includes('-framerate 24 -start_number 1 -i /f/shot_%04d.png -frames:v 3') && a.includes('libx264') && sequenceArgs('/f', r[1], 24, '/o.webm', true).includes('yuva420p'));
+}
+
 console.log(`scc: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -2,6 +2,7 @@
 import { writeEDL, parseEDL } from '../src/Services/interchange/edl.js';
 import { writeFCPXML, parseFCPXML } from '../src/Services/interchange/fcpxml.js';
 import { writeXMEML, parseXMEML } from '../src/Services/interchange/xmeml.js';
+import { writeOTIO, parseOTIO } from '../src/Services/interchange/otio.js';
 import { describeSequence, quantize, pathToUrl, urlToPath } from '../src/Services/interchange/model.js';
 import { framesToTC, tcToFrames } from '../src/Services/interchange/timecode.js';
 import { parseXml } from '../src/Services/interchange/xml.js';
@@ -176,6 +177,36 @@ FCM: NON-DROP FRAME
   ok('XML: Audio Levels (linear gain) -> Volume dB keyframes 0 / -6 dB', near(xa.volume.level.v, -6.0206) && xa.volume.level.keys.length === 2 && xa.volume.level.keys[0].v === 0 && near(xa.volume.level.keys[1].v, -6.0206) && xa.volume.level.keys[1].t === 1, JSON.stringify(xa.volume));
   ok('XML: effects it cannot carry are reported', (x.unknownFx || []).includes('Three-Way Color Corrector'), JSON.stringify(x.unknownFx));
   ok('a clip without effects stays plain (round trip of an EditorStage export)', (() => { const rt = parseFCPXML(writeFCPXML(quantize(describeSequence(seq, media)))); return rt.clips.every((c) => !c.motion && !c.opacity && !c.volume && !c.effects); })());
+}
+
+// ---- OpenTimelineIO (G-02) ----
+for (const fps of [30, 29.97, 25]) {
+  const d = quantize({ ...desc, fps }); const text = writeOTIO(d); const back = parseOTIO(text);
+  ok(`otio ${fps}: Timeline with Stack and Tracks`, JSON.parse(text).OTIO_SCHEMA === 'Timeline.1' && JSON.parse(text).tracks.OTIO_SCHEMA === 'Stack.1');
+  same(`otio ${fps} clips`, norm(back), norm(d));
+  same(`otio ${fps} transitions`, normT(back), normT(d));
+  same(`otio ${fps} markers`, back.markers.map((m) => `${m.time.toFixed(3)} ${m.name}`), d.markers.map((m) => `${m.time.toFixed(3)} ${m.name}`));
+  same(`otio ${fps} links`, linkedPairs(back), linkedPairs(d));
+  ok(`otio ${fps} media paths survive (spaces and &)`, back.media.length === d.media.length && back.media.some((m) => m.path === 'D:\\Shoot <2>\\B002 & co.mov'));
+}
+ok('otio: a file that is not OTIO is refused', (() => { try { parseOTIO('{"a":1}'); return false; } catch (e) { return /OpenTimelineIO/.test(e.message); } })() && (() => { try { parseOTIO('nope'); return false; } catch { return true; } })());
+{
+  const R = (v, rate = 24) => ({ value: v, rate });
+  const foreign = JSON.stringify({ OTIO_SCHEMA: 'Timeline.1', name: 'Other tool', tracks: { OTIO_SCHEMA: 'Stack.1', children: [{ OTIO_SCHEMA: 'Track.1', kind: 'Video', children: [
+    { OTIO_SCHEMA: 'Gap.1', source_range: { start_time: R(0), duration: R(12) } },
+    { OTIO_SCHEMA: 'Clip.2', name: 'a', source_range: { start_time: R(24), duration: R(48) }, media_references: { DEFAULT_MEDIA: { OTIO_SCHEMA: 'ExternalReference.1', target_url: 'file:///C:/x/a.mov', available_range: { start_time: R(0), duration: R(240) } } }, active_media_reference_key: 'DEFAULT_MEDIA', effects: [{ OTIO_SCHEMA: 'Effect.1', effect_name: 'Blur' }] },
+    { OTIO_SCHEMA: 'Clip.2', name: 'gen', media_references: { DEFAULT_MEDIA: { OTIO_SCHEMA: 'GeneratorReference.1' } }, active_media_reference_key: 'DEFAULT_MEDIA', source_range: { start_time: R(0), duration: R(24) } }] }] } });
+  const d = parseOTIO(foreign);
+  ok('otio from another tool: gap, clip at 24 fps, generator skipped', d.fps === 24 && d.clips.length === 1 && d.clips[0].start === 0.5 && d.clips[0].inPoint === 1 && d.clips[0].dur === 2 && d.skipped === 1 && d.media[0].path === 'C:\\x\\a.mov' && d.unknownFx.includes('Blur'));
+}
+
+// ---- Markers as CSV (G-05) ----
+{
+  const { markersToCsv } = await import('../src/Services/markersCsv.js');
+  const csv = markersToCsv([{ time: 10, dur: 2, name: 'ฉาก, "หนึ่ง"', comment: 'line1\nline2', color: '#e53935', type: 'chapter' }, { time: 1, name: 'First' }], 30);
+  const lines = csv.split('\r\n');
+  ok('csv: BOM, header and rows sorted by time', csv.charCodeAt(0) === 0xfeff && lines[0].endsWith('Name,Color,Type,In,Out,Duration,In (seconds),Comment') && lines[1].startsWith('First,Green,comment,00:00:01:00'));
+  ok('csv: Thai, commas, quotes and line breaks are quoted', csv.includes('"ฉาก, ""หนึ่ง""",Red,chapter,00:00:10:00,00:00:12:00,00:00:02:00,10.000,"line1\nline2"'));
 }
 
 console.log(`interchange: ${pass} passed, ${fail} failed`);

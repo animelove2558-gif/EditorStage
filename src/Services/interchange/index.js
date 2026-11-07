@@ -9,17 +9,18 @@ import { describeSequence, quantize, baseName } from './model.js';
 import { writeEDL, parseEDL } from './edl.js';
 import { writeFCPXML, parseFCPXML } from './fcpxml.js';
 import { writeXMEML, parseXMEML } from './xmeml.js';
+import { writeOTIO, parseOTIO } from './otio.js';
 
-export { describeSequence, quantize, writeEDL, parseEDL, writeFCPXML, parseFCPXML, writeXMEML, parseXMEML };
+export { describeSequence, quantize, writeEDL, parseEDL, writeFCPXML, parseFCPXML, writeXMEML, parseXMEML, writeOTIO, parseOTIO };
 export { exportAAFFile } from './aafExport.js';
 export { readCFB } from './cfb.js';
-export const INTERCHANGE_EXT = ['edl', 'xml', 'fcpxml'];
+export const INTERCHANGE_EXT = ['edl', 'xml', 'fcpxml', 'otio'];
 const uid = () => Math.random().toString(36).slice(2, 9);
 // imported effects ({ name, params } from fxImport.js) -> clip effects with the effect's other parameters at their defaults
 const FX_FOLDER = { 'ASC CDL': 'Color Correction', 'Gaussian Blur': 'Blur & Sharpen', Crop: 'Transform' };
 const appEffects = (list) => (list || []).filter((e) => FX_FOLDER[e.name]).map((e) => ({ id: uid(), effectId: `Video Effects/${FX_FOLDER[e.name]}/${e.name}`, name: e.name, category: 'Video',
   folder: FX_FOLDER[e.name], enabled: true, params: { ...defaultParams(e.name), ...e.params } }));
-const EXT = { edl: 'edl', fcpxml: 'fcpxml', xmeml: 'xml' };
+const EXT = { edl: 'edl', fcpxml: 'fcpxml', xmeml: 'xml', otio: 'otio' };
 
 /** Export the active sequence (Premiere XML: the selection when clips are selected). Returns { files, skipped } or null when cancelled. */
 export async function exportInterchangeFile(format) {
@@ -40,7 +41,7 @@ export async function exportInterchangeFile(format) {
     for (const t of desc.tracks.filter((x) => x.kind === 'video' && x.id !== 'V1' && desc.clips.some((c) => c.track === x.id))) {
       const p = path.replace(/(\.edl)?$/i, ` ${t.id}.edl`); await window.editorstage.writeFile(p, writeEDL(desc, { videoTrack: t.id, withAudio: false })); files.push(p);
     }
-  } else await window.editorstage.writeFile(path, format === 'fcpxml' ? writeFCPXML(desc) : writeXMEML(desc));
+  } else await window.editorstage.writeFile(path, format === 'fcpxml' ? writeFCPXML(desc) : format === 'otio' ? writeOTIO(desc) : writeXMEML(desc));
   return { files, skipped: desc.skipped };
 }
 
@@ -48,9 +49,10 @@ export async function exportInterchangeFile(format) {
 export function parseInterchange(text, name, fps) {
   const ext = name.split('.').pop().toLowerCase();
   if (ext === 'edl') return parseEDL(text, fps);
+  if (ext === 'otio' || /^\s*\{\s*"OTIO_SCHEMA"/.test(text)) return parseOTIO(text, fps);
   if (/<fcpxml[\s>]/.test(text)) return parseFCPXML(text);
   if (/<xmeml[\s>]/.test(text)) return parseXMEML(text);
-  throw new Error('not an EDL, FCPXML or Final Cut Pro 7 / Premiere XML file');
+  throw new Error('not an EDL, OpenTimelineIO, FCPXML or Final Cut Pro 7 / Premiere XML file');
 }
 
 /** Import into a new sequence. Media is matched by path (project items first), imported when the file exists, otherwise added offline. */
