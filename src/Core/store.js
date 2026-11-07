@@ -124,7 +124,18 @@ const settle = () => { for (const f of beforeEdit) f(); };
 // History panel: at most this many undoable steps are kept per sequence (Preferences > History States); the oldest drop off
 let historyLimit = 100;
 export const setHistoryLimit = (n) => { historyLimit = Math.max(1, Math.round(n) || 100); for (const s of stacks.values()) trim(s); showHistory(); };
-function trim(s) { const k = s.undo.length - historyLimit; if (k > 0) { s.base = s.undo[k - 1].label; s.undo.splice(0, k); } }
+// Every step keeps a whole copy of the sequence, so on a large sequence the step count alone says little: at most this many
+// characters of JSON stay per sequence (the oldest steps drop off), but never fewer than the last few steps.
+let historyBudget = 100 * 1048576; const HISTORY_MIN_STEPS = 5;
+export const setHistoryBudget = (chars) => { historyBudget = chars; for (const s of stacks.values()) trim(s); showHistory(); };
+const sizes = new WeakMap();
+const seqChars = (q) => { if (!q) return 0; let n = sizes.get(q); if (n === undefined) { n = JSON.stringify(q).length; sizes.set(q, n); } return n; };
+function trim(s) {
+  let k = s.undo.length - historyLimit;
+  let total = 0; for (const e of s.undo) total += seqChars(e.seq.after);
+  for (let i = Math.max(0, k); total > historyBudget && s.undo.length - i > HISTORY_MIN_STEPS; i++) { total -= seqChars(s.undo[i].seq.after); k = i + 1; }
+  if (k > 0) { s.base = s.undo[k - 1].label; s.undo.splice(0, k); }
+}
 
 const sameJson = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
 /** media list changes of one step: { items: { id: { before, after } }, order: { before, after } | null } (null = none) */
