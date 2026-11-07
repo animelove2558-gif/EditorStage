@@ -3,7 +3,7 @@
 import { getState, edit } from '../Core/store';
 import { sourceAt } from '../Core/clipTime';
 import { LUMETRI_DEFAULTS } from '../Renderers/fx/videoEffects';
-import { elementForMedia, mediaById } from './media';
+import { elementForMedia, mediaById, releaseKeyed } from './media';
 import { toRgb, simulate } from './colorMatch';
 import { runDsp } from './dsp';
 
@@ -12,21 +12,24 @@ const once = (el, ev) => new Promise((r) => el.addEventListener(ev, r, { once: t
 export async function clipFrame(clip, t, withCanvas = false) {
   const m = clip && clip.mediaId && mediaById(clip.mediaId);
   if (!m || (m.kind !== 'video' && m.kind !== 'image')) throw new Error('Select a video or still clip');
-  const el = elementForMedia(m, `color:${clip.id}`); if (!el) throw new Error('The media is not available');
-  if (m.kind === 'video' && el.currentTime !== undefined) {
-    el.pause?.(); if (el.readyState < 1) await once(el, 'loadedmetadata');
-    const target = sourceAt(clip, t, m.fps || 30, m.duration);
-    if (Math.abs(el.currentTime - target) > 0.0005) { const p = once(el, 'seeked'); el.currentTime = target; await p; }
-    if (el.readyState < 2) await once(el, 'loadeddata');
-  } else if (el.decode) await el.decode().catch(() => {});
-  const w0 = el.videoWidth || el.naturalWidth || el.width, h0 = el.videoHeight || el.naturalHeight || el.height;
-  if (!w0 || !h0) throw new Error('No frame to analyse');
-  const w = 96, h = Math.max(8, Math.round((96 * h0) / w0));
-  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: true });
-  g.drawImage(el, 0, 0, w, h); const px = toRgb(g.getImageData(0, 0, w, h));
-  if (!withCanvas) return px;
-  const big = document.createElement('canvas'); const k = Math.min(1, 640 / w0); big.width = Math.round(w0 * k); big.height = Math.round(h0 * k); big.getContext('2d').drawImage(el, 0, 0, big.width, big.height);
-  return { px, w, h, canvas: big };
+  const key = `color:${clip.id}`;
+  const el = elementForMedia(m, key); if (!el) throw new Error('The media is not available');
+  try {
+    if (m.kind === 'video' && el.currentTime !== undefined) {
+      el.pause?.(); if (el.readyState < 1) await once(el, 'loadedmetadata');
+      const target = sourceAt(clip, t, m.fps || 30, m.duration);
+      if (Math.abs(el.currentTime - target) > 0.0005) { const p = once(el, 'seeked'); el.currentTime = target; await p; }
+      if (el.readyState < 2) await once(el, 'loadeddata');
+    } else if (el.decode) await el.decode().catch(() => {});
+    const w0 = el.videoWidth || el.naturalWidth || el.width, h0 = el.videoHeight || el.naturalHeight || el.height;
+    if (!w0 || !h0) throw new Error('No frame to analyse');
+    const w = 96, h = Math.max(8, Math.round((96 * h0) / w0));
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(el, 0, 0, w, h); const px = toRgb(g.getImageData(0, 0, w, h));
+    if (!withCanvas) return px;
+    const big = document.createElement('canvas'); const k = Math.min(1, 640 / w0); big.width = Math.round(w0 * k); big.height = Math.round(h0 * k); big.getContext('2d').drawImage(el, 0, 0, big.width, big.height);
+    return { px, w, h, canvas: big };
+  } finally { releaseKeyed(key); }
 }
 /** Per-pixel mask (w x h) of the face found by the face model in `canvas` (its landmark hull, a little widened), or null. */
 export async function faceRegion(canvas, w, h) {

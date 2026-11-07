@@ -1,6 +1,7 @@
 import { edit, getState } from '../Core/store';
 import { evalParam } from '../Core/params';
-import { updateAudio, disposeClipAudio } from './audioEngine';
+import { updateAudio, disposeClipAudio, disposeElementAudio } from './audioEngine';
+import { lruVictims } from '../Core/lru';
 import { clearPeaks } from './waveform';
 import { graphicCanvas } from './graphics';
 import { maskKey, getMask, computeMask, removeBgOptions } from './segment';
@@ -155,13 +156,47 @@ export function elementForMedia(media, key = media.id, asAudio = false) {
   let e = pool.get(key);
   const px = playsProxy(media);
   if (e && (e.rev !== (media.rev || 0) || e.path !== media.playPath || e.px !== px)) { dropElement(key, e); e = null; } // file changed on disk / relinked / proxy toggled
-  if (!e) { e = { el: makeElement(media, asAudio), last: 0, mediaId: media.id, rev: media.rev || 0, path: media.playPath, px }; pool.set(key, e); }
+  if (!e) { e = { el: makeElement(media, asAudio), last: 0, mediaId: media.id, rev: media.rev || 0, path: media.playPath, px }; pool.set(key, e); prunePool(); }
   e.last = performance.now();
   return e.el;
 }
 function dropElement(key, e) {
   try { e.el.pause?.(); e.el.removeAttribute?.('src'); e.el.load?.(); } catch { /* ok */ }
-  pool.delete(key); disposeClipAudio(key);
+  pool.delete(key); disposeClipAudio(key); disposeElementAudio(e.el);
+}
+// Every element keeps a decoder and buffered data, and Chromium limits concurrent hardware decoders, so the pool is capped.
+// Images are not counted: they hold no decoder, the browser may discard their pixels, and an export does not wait for one
+// to reload. An element is safe from eviction while it is playing or seeking, or was asked for within the last second:
+// the monitor's sync pass and the exporter ask for every element they use on each frame.
+export const POOL_CAPS = { video: 12, audio: 24 };
+const PROTECT_MS = 1000;
+const NEVER_EVICT = 'color:'; // Auto Color holds its element across awaits and releases it itself
+const pinned = (key, e, now) => now - e.last < PROTECT_MS || e.el.paused === false || e.el.seeking === true || key.startsWith(NEVER_EVICT);
+const kindOfElement = (el) => (el.tagName === 'VIDEO' ? 'video' : el.tagName === 'AUDIO' ? 'audio' : null);
+function prunePool() {
+  const now = performance.now();
+  for (const kind of Object.keys(POOL_CAPS)) {
+    const items = [];
+    for (const [key, e] of pool) if (kindOfElement(e.el) === kind) items.push({ key, used: e.last, pinned: pinned(key, e, now) });
+    for (const key of lruVictims(items, { maxCount: POOL_CAPS[kind] })) dropElement(key, pool.get(key));
+  }
+}
+/** Elements of clips that are gone from the sequence (deleted, or another sequence opened). Undo simply creates them again. */
+let prunedSeq = null, prunedAt = 0;
+function pruneDeleted(realSeq, clips, now) {
+  if (realSeq === prunedSeq || now - prunedAt < 500) return;
+  prunedSeq = realSeq; prunedAt = now;
+  const live = new Set(clips.map((c) => c.elKey || c.id));
+  for (const [key, e] of [...pool]) {
+    if (key.includes(':') || !kindOfElement(e.el) || live.has(key.split('#')[0]) || pinned(key, e, now)) continue; // prefixed keys belong to their own feature
+    dropElement(key, e);
+  }
+}
+/** Sizes of the element pool (diagnostics and tests). */
+export function poolStats() {
+  const s = { total: pool.size, video: 0, audio: 0, image: 0 };
+  for (const e of pool.values()) s[kindOfElement(e.el) || 'image']++;
+  return s;
 }
 /** Forget every element/audio chain/peak cache of a media item (its file was replaced or edited externally). */
 export function invalidateMedia(mediaId) {
@@ -249,6 +284,8 @@ export function syncPlayback(realState) {
   // pause elements that are no longer near anything
   const now = performance.now();
   for (const [k, e] of pool) if (e.el.pause && !e.el.paused && !active.has(k)) { /* paused above for known clips */ if (now - e.last > 1500) e.el.pause(); }
+  pruneDeleted(realState.sequence, seq.clips, now);
+  if (pool.size > POOL_CAPS.video) prunePool(); // an element stopped being protected since the last one was created
   updateAudio(state, elementForClip, (c) => !!c.mediaId && c.enabled && (() => { const [w0, w1] = clipWindow(seq, c); return t >= w0 && t < w1; })());
   syncMogrtAudio(state); // sound packed inside motion graphics templates
   pauseIdleVideos(); // videos packed inside templates that playback stopped using
