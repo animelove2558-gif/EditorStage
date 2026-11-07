@@ -53,6 +53,7 @@ export function essentialNodes(c, a) {
 function buildChain(clip, el) {
   const c = audioContext();
   let ch = chains.get(clip.id);
+  if (ch && ch.el !== el) { disposeClipAudio(clip.id); ch = null; } // its element was evicted or replaced: this chain plays nothing
   if (!ch) {
     const src = c.createMediaElementSource(el);
     ch = { el, src, input: c.createGain(), gain: c.createGain(), pan: stereoPanner(c), nodes: [], sig: null, bus: null };
@@ -196,9 +197,14 @@ const isMuted = (seq, c) => !!seq.tracks.find((x) => x.id === c.track)?.muted;
 
 export function disposeClipAudio(id) {
   const ch = chains.get(id); if (!ch) return;
-  try { ch.gain.disconnect(); ch.src.disconnect(); } catch { /* ok */ }
+  stopRetimed(retimed.get(id)); retimed.delete(id);
+  // the whole chain: a worklet effect left connected would keep processing for as long as the page lives
+  for (const n of [ch.src, ch.input, ...ch.nodes.map((x) => x.output), ch.gain, ch.pan]) { try { n.disconnect(); } catch { /* not connected */ } }
+  clipMeters.delete(id);
   chains.delete(id);
 }
+/** The chains fed by an element that is being dropped (a nested clip's chain has another key than its element). */
+export function disposeElementAudio(el) { for (const [id, ch] of [...chains]) if (ch.el === el) disposeClipAudio(id); }
 export const debugChains = () => [...chains.keys()];
 
 export const debugChainInfo = () => [...chains.entries()].map(([k, c]) => [k, c.nodes.length, !!c.sig]);
