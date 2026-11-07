@@ -3,6 +3,7 @@ import { Compositor, hasGrade } from '../Renderers/Compositor';
 import { elementForClip, mediaById, mediaUrl, clipSourceTime, renderDeps, echoElement, lockPlayback, blendTimes, blendElement } from './media';
 import { flatten } from '../Core/flatten';
 import { evalParam, DEFAULT_MOTION, DEFAULT_OPACITY } from '../Core/params';
+import { rgbaToRgb } from '../Core/pixels';
 import { AUDIO_FX, chainLatency } from './audioFx';
 import { computeGain, computePan, masterGain, stereoPanner, dialogueAt, essentialNodes, loadWorklets, channelNode } from './audioEngine';
 import { resolveParams } from '../Core/params';
@@ -182,6 +183,7 @@ export async function renderAudioMix(state, a, b, onProgress) {
     onProgress?.();
   }
   const out = await ctx.startRendering();
+  decodeCache.clear(); // whole files as float samples (an hour of stereo is over 1 GB): kept for this mix only
   const L = out.getChannelData(0).subarray(preN), R = out.getChannelData(1).subarray(preN); const inter = new Int16Array(len * 2);
   for (let i = 0; i < len; i++) { inter[i * 2] = Math.max(-1, Math.min(1, L[i])) * 32767; inter[i * 2 + 1] = Math.max(-1, Math.min(1, R[i])) * 32767; }
   inter.sampleRate = sr; return inter;
@@ -409,7 +411,9 @@ async function renderExport(opts, onProgress, cancel) {
     const canvas = document.createElement('canvas');
     const comp = new Compositor(canvas); comp.resize(rw, rh);
     const gl = comp.gl; const px = new Uint8Array(rw * rh * 4);
-    const args = ['-y', '-hide_banner', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${rw}x${rh}`, '-r', String(fps), '-i', '-'];
+    // Each frame is copied through IPC: without an alpha channel, the unused fourth byte is left out (25% less per frame).
+    const rgb = P.alpha ? null : new Uint8Array(rw * rh * 3);
+    const args = ['-y', '-hide_banner', '-f', 'rawvideo', '-pix_fmt', P.alpha ? 'rgba' : 'rgb24', '-s', `${rw}x${rh}`, '-r', String(fps), '-i', '-'];
     if (audioPath) args.push('-i', audioPath);
     if (metaPath) args.push('-i', metaPath);
     args.push(...tail(0, audioPath ? 1 : null, metaPath ? (audioPath ? 2 : 1) : null));
@@ -425,19 +429,24 @@ async function renderExport(opts, onProgress, cancel) {
       for (let i = 0; i < frames; i++) {
         if (cancel()) { await es.job.cancel(id); return { ok: false, error: 'Cancelled' }; }
         const t = opts.start + i / fps;
-        await prepareFrame(state, t);
-        if (P.alpha) {
-          comp.render({ ...state, playhead: t }, renderDeps, { w: rw, h: rh, alpha: true, read: px });
-          for (let j = 0; j < px.length; j += 4) { const al = px[j + 3]; if (al && al < 255) { const k = 255 / al; px[j] = Math.min(255, px[j] * k + 0.5); px[j + 1] = Math.min(255, px[j + 1] * k + 0.5); px[j + 2] = Math.min(255, px[j + 2] * k + 0.5); } } // straight alpha
-        } else {
-          comp.render({ ...state, playhead: t }, renderDeps, { w: rw, h: rh });
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-          gl.readPixels(0, 0, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        // a frame drawn while the GPU context is lost would be black: wait for the restore and draw it again, or fail the export
+        let drawn = false;
+        for (let attempt = 0; attempt < 3 && !drawn; attempt++) {
+          await prepareFrame(state, t);
+          if (P.alpha) drawn = comp.render({ ...state, playhead: t }, renderDeps, { w: rw, h: rh, alpha: true, read: px });
+          else {
+            drawn = comp.render({ ...state, playhead: t }, renderDeps, { w: rw, h: rh });
+            if (drawn) { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.readPixels(0, 0, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE, px); }
+          }
+          if (gl.isContextLost()) drawn = false;
+          if (!drawn && !(await comp.whenRestored())) break;
         }
-        if (!(await es.job.write(id, px))) { const r = await es.job.end(id); return { ok: false, error: r.error || 'The encoder stopped' }; }
+        if (!drawn) { await es.job.cancel(id); return { ok: false, error: 'The graphics context was lost during the export and did not come back. Save, restart EditorStage and export again.' }; }
+        if (P.alpha) for (let j = 0; j < px.length; j += 4) { const al = px[j + 3]; if (al && al < 255) { const k = 255 / al; px[j] = Math.min(255, px[j] * k + 0.5); px[j + 1] = Math.min(255, px[j + 1] * k + 0.5); px[j + 2] = Math.min(255, px[j + 2] * k + 0.5); } } // straight alpha
+        if (!(await es.job.write(id, rgb ? rgbaToRgb(px, rgb) : px))) { const r = await es.job.end(id); return { ok: false, error: r.error || 'The encoder stopped' }; }
         if (i % 3 === 0) onProgress(i / frames, `Rendering frame ${i + 1} / ${frames}`);
       }
-    } finally { lockPlayback(false); gl.getExtension('WEBGL_lose_context')?.loseContext(); }
+    } finally { lockPlayback(false); comp.dispose(); }
     onProgress(1, 'Finalizing…');
     return done({ ...(await es.job.end(id)), encoder: va.encoder });
   } finally { for (const p of temps) es.removeFile(p).catch(() => {}); }
@@ -461,7 +470,7 @@ async function renderStateFrame(state, t, w, h) {
   const gl = comp.gl; const px = new Uint8Array(w * h * 4);
   lockPlayback(true);
   try { await prepareFrame(state, t); comp.render({ ...state, playhead: t }, renderDeps, { w, h }); gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); }
-  finally { lockPlayback(false); comp.gl.getExtension('WEBGL_lose_context')?.loseContext(); }
+  finally { lockPlayback(false); comp.dispose(); }
   const img = new ImageData(w, h); const row = w * 4;
   for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * row, (h - y) * row), y * row); // GL rows are bottom-up
   return img;
