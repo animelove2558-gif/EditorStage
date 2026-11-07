@@ -7,6 +7,10 @@ const crypto = require('crypto');
 
 const { ffmpegPath, hasEncoder } = require('./ffmpegBin');
 const { renameRetry, guard } = require('./fileGuard');
+const crashLog = require('./crashLog');
+
+const PROBE_TIMEOUT_MS = Number(process.env.EDITORSTAGE_PROBE_TIMEOUT_MS) || 30000;
+const lastLines = (t, n = 6) => String(t).trim().split(String.fromCharCode(10)).slice(-n).join(' | ');
 
 const ARGS = {
   video: (i, o) => ['-y', '-i', i, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:a', 'aac', '-movflags', '+faststart', o],
@@ -72,11 +76,11 @@ const { jobStart, jobWrite, jobEnd, jobCancel } = createJobs(ffmpegPath);
 const argsRefused = (args) => guard().checkFfmpegArgs(args);
 ipcMain.handle('job:start', (_e, id, args) => { const bad = argsRefused(args); return bad ? { ok: false, error: bad } : jobStart(id, args); });
 ipcMain.handle('job:write', (_e, id, buf) => jobWrite(id, buf));
-ipcMain.handle('job:end', (_e, id) => jobEnd(id));
+ipcMain.handle('job:end', async (_e, id) => { const r = await jobEnd(id); if (!r.ok) crashLog.log('ffmpeg-job', `${id}: ${r.error}`); return r; });
 ipcMain.handle('job:cancel', (_e, id) => jobCancel(id));
 ipcMain.handle('export:start', (_e, args) => { const bad = argsRefused(args); return bad ? { ok: false, error: bad } : jobStart('export', args); });
 ipcMain.handle('export:frame', (_e, buf) => jobWrite('export', buf));
-ipcMain.handle('export:end', () => jobEnd('export'));
+ipcMain.handle('export:end', async () => { const r = await jobEnd('export'); if (!r.ok) crashLog.log('ffmpeg-job', `export: ${r.error}`); return r; });
 ipcMain.handle('export:cancel', () => jobCancel('export'));
 /**
  * Run FFmpeg to completion with arguments only (no stdin). Returns { ok, stderr, cancelled }.
@@ -92,7 +96,7 @@ ipcMain.handle('ffmpeg:run', (e, args, id) => new Promise((resolve) => {
     if (id) { const m = /time=(\d+):(\d+):(\d+(?:\.\d+)?)[^\n]*$/.exec(String(d)); if (m) { try { e.sender.send('ffmpeg:progress', id, +m[1] * 3600 + +m[2] * 60 + +m[3]); } catch { /* window gone */ } } }
   });
   p.on('error', (x) => { runs.delete(id); resolve({ ok: false, error: String(x) }); });
-  p.on('close', (code) => { runs.delete(id); resolve({ ok: code === 0 && !run.killed, cancelled: run.killed, stderr: err, error: run.killed ? 'Cancelled' : code === 0 ? undefined : err.trim().split('\n').pop() }); });
+  p.on('close', (code) => { runs.delete(id); if (code !== 0 && !run.killed) crashLog.log('ffmpeg-exit', `code=${code} ${lastLines(err)}`); resolve({ ok: code === 0 && !run.killed, cancelled: run.killed, stderr: err, error: run.killed ? 'Cancelled' : code === 0 ? undefined : err.trim().split('\n').pop() }); });
 }));
 ipcMain.handle('ffmpeg:kill', (_e, id) => { const r = runs.get(id); if (r) { r.killed = true; r.p.kill(); } return !!r; });
 ipcMain.handle('app:tmp', () => app.getPath('temp'));
@@ -102,8 +106,11 @@ ipcMain.handle('media:probe', (_e, src) => new Promise((resolve) => {
   const bin = ffmpegPath(); if (!bin || !guard().canRead(src)) return resolve({ ok: false });
   const p = spawnTracked(bin, ['-hide_banner', '-i', src], { windowsHide: true });
   let err = ''; p.stderr.on('data', (d) => { err += d; });
-  p.on('error', () => resolve({ ok: false }));
+  // a file on a sleeping drive or a stalled share must not leave the import waiting (and ffmpeg running) for ever
+  const timer = setTimeout(() => { crashLog.log('probe-timeout', `no answer in ${PROBE_TIMEOUT_MS} ms`); try { p.kill(); } catch { /* gone */ } resolve({ ok: false, timeout: true }); }, PROBE_TIMEOUT_MS);
+  p.on('error', () => { clearTimeout(timer); resolve({ ok: false }); });
   p.on('close', () => {
+    clearTimeout(timer);
     const fps = /(\d+(?:\.\d+)?) fps/.exec(err);
     const dur = /Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/.exec(err);
     const vline = /Stream #.*Video: ([^\n]*)/.exec(err); const pix = vline && /(?:^|, )(\w+)(?:\(|,)/.exec(vline[1].split(', ').slice(1).join(', ') + ',');

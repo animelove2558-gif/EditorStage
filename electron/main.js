@@ -8,14 +8,24 @@ require('./media');
 require('./workflow');
 const renderWindow = require('./renderWindow');
 const models = require('./models');
+const crashLog = require('./crashLog');
+
+// One instance only, decided before anything else is set up: a second launch (double-click on a project) passes its
+// command line on and quits without creating a window.
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+crashLog.setDir(path.join(app.getPath('userData'), 'logs'));
+// two quick deaths in a row, or the graphics process dying twice, move the app to software graphics (until the user asks for the default)
+if (primaryInstance) require('./gpuGuard').install({ app, ipcMain }, crashLog.log);
+process.on('uncaughtException', (e) => { crashLog.log('main-uncaughtException', e); });
+process.on('unhandledRejection', (e) => { crashLog.log('main-unhandledRejection', e); });
 
 // Privileged media scheme: CORS-enabled + streamable so <video>/<audio> can feed WebAudio and WebGL.
 protocol.registerSchemesAsPrivileged([{ scheme: 'es-app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true } }, { scheme: 'es-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } }]);
 
-// Hardware acceleration / WebGPU / WebCodecs flags
-app.commandLine.appendSwitch('enable-unsafe-webgpu');
+// Codec features only. The code uses WebGL2, so the unsafe WebGPU flag is not set, and the GPU blocklist stays on
+// (it keeps Chromium away from drivers known to crash).
 app.commandLine.appendSwitch('enable-features', 'WebCodecs,VaapiVideoDecoder,PlatformHEVCDecoderSupport');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
 let mainWin = null;
 function createWindow() {
@@ -45,10 +55,54 @@ function createWindow() {
     win.webContents.send('app:closeRequest');
     setTimeout(() => { ipcMain.removeListener('app:closeAck', ack); if (!acked && !win.isDestroyed()) { win.closeOk = true; win.close(); } }, 2000);
   });
+  watchCrashes(win);
   win.on('maximize', () => win.webContents.send('win:state', 'maximized'));
   win.on('unmaximize', () => win.webContents.send('win:state', 'normal'));
   return win;
 }
+
+/**
+ * The page can die (out of memory, GPU driver reset, a decoder crash) or hang. Each case is logged, the user is told, and
+ * the page is reloaded so the recovery offer (versions.bootRecovery) can bring the project back. After 2 crashes within a
+ * minute the page is not reloaded again: a crash loop would only hide the cause.
+ */
+const crashBurst = crashLog.createBurst(2, 60000);
+let crashDialogOpen = false;
+async function crashNotice(win, message, detail, buttons) {
+  if (crashDialogOpen || !win || win.isDestroyed()) return -1;
+  crashDialogOpen = true;
+  try { return (await dialog.showMessageBox(win, { type: 'warning', buttons, defaultId: 0, cancelId: buttons.length - 1, title: 'EditorStage', message, detail })).response; }
+  catch { return -1; } finally { crashDialogOpen = false; }
+}
+async function recoverPage(win, what) {
+  if (!win || win.isDestroyed()) return;
+  if (crashBurst.hit()) {
+    crashLog.log('crash-loop', `${what}: not reloading again (3 crashes in a minute)`);
+    await crashNotice(win, 'EditorStage keeps stopping.', `${what}. Close and reopen EditorStage. Your project is recovered from the last auto-save on the next start. Details are in ${crashLog.logFile()}`, ['Close']);
+    return;
+  }
+  await crashNotice(win, 'EditorStage stopped working and will reload.', `${what}. The page reloads now; EditorStage then offers to restore your project from the last auto-save.`, ['Reload']);
+  if (!win.isDestroyed()) win.webContents.reload();
+}
+function watchCrashes(win) {
+  const wc = win.webContents;
+  wc.on('render-process-gone', (_e, d) => {
+    crashLog.log('render-process-gone', `reason=${d.reason} exitCode=${d.exitCode}`);
+    if (d.reason !== 'clean-exit') recoverPage(win, `The window process ended (${d.reason})`);
+  });
+  wc.on('unresponsive', async () => {
+    crashLog.log('unresponsive', 'the window stopped responding');
+    const r = await crashNotice(win, 'EditorStage is not responding.', 'Wait if it is doing heavy work, or reload the page (unsaved changes since the last auto-save are kept in the recovery copy).', ['Wait', 'Reload']);
+    if (r === 1 && !win.isDestroyed()) recoverPage(win, 'The window was reloaded because it did not respond');
+  });
+  wc.on('responsive', () => crashLog.log('responsive', 'the window responds again'));
+}
+app.on('child-process-gone', (_e, d) => {
+  crashLog.log('child-process-gone', `type=${d.type} reason=${d.reason} exitCode=${d.exitCode} name=${d.name || ''}`);
+  if (d.type === 'GPU' && d.reason !== 'clean-exit' && mainWin && !mainWin.isDestroyed()) recoverPage(mainWin, `The graphics process ended (${d.reason})`);
+});
+ipcMain.on('log:write', (_e, kind, msg) => { crashLog.log(`page-${String(kind).slice(0, 30)}`, String(msg)); });
+ipcMain.handle('log:openFolder', async () => { const d = path.dirname(crashLog.logFile()); await fs.mkdir(d, { recursive: true }); return shell.openPath(d); });
 
 renderWindow.setNavigationLock((wc) => lockNavigation(wc));
 const appPage = pathToFileURL(path.join(__dirname, '..', 'dist')).toString().toLowerCase() + '/';
@@ -82,11 +136,12 @@ function enforceOffline() {
 
 const filters = {
   project: [{ name: 'EditorStage Project', extensions: ['esproj'] }],
-  media: [{ name: 'All Supported Media', extensions: ['mp4','mov','avi','mkv','webm','prores','hevc','h265','h264','264','mpeg','mpg','m4v','ts','flv','jpg','jpeg','png','gif','webp','tiff','tif','bmp','svg','heic','heif','raw','cr2','nef','arw','dng','wav','mp3','aac','m4a','flac','ogg','aiff','aif','wma','xml','fcpxml','edl'] }, { name: 'Sequence (XML / FCPXML / EDL)', extensions: ['xml', 'fcpxml', 'edl'] }, { name: 'All Files', extensions: ['*'] }],
+  media: [{ name: 'All Supported Media', extensions: ['mp4','mov','avi','mkv','webm','prores','hevc','h265','h264','264','mpeg','mpg','m4v','ts','flv','jpg','jpeg','png','gif','webp','tiff','tif','bmp','svg','heic','heif','raw','cr2','nef','arw','dng','wav','mp3','aac','m4a','flac','ogg','aiff','aif','wma','xml','fcpxml','edl','otio'] }, { name: 'Sequence (XML / FCPXML / EDL / OTIO)', extensions: ['xml', 'fcpxml', 'edl', 'otio'] }, { name: 'All Files', extensions: ['*'] }],
   mogrt: [{ name: 'Motion Graphics Template', extensions: ['mogrt'] }],
   ffmpeg: process.platform === 'win32' ? [{ name: 'FFmpeg', extensions: ['exe'] }, { name: 'All Files', extensions: ['*'] }] : [{ name: 'All Files', extensions: ['*'] }],
-  interchange: [{ name: 'Sequence (Premiere / FCP7 XML, FCPXML, EDL)', extensions: ['xml', 'fcpxml', 'edl'] }],
+  interchange: [{ name: 'Sequence (Premiere / FCP7 XML, FCPXML, EDL, OpenTimelineIO)', extensions: ['xml', 'fcpxml', 'edl', 'otio'] }],
   lut: [{ name: '3D LUT (.cube, .3dl)', extensions: ['cube', '3dl'] }],
+  scc: [{ name: 'Scenarist Closed Captions (.scc)', extensions: ['scc'] }],
   keymap: [{ name: 'EditorStage Keyboard Shortcuts', extensions: ['eskeys', 'json'] }],
   preset: [{ name: 'Effect Presets (.espreset, Premiere .prfpset)', extensions: ['espreset', 'prfpset', 'json'] }],
   app: [{ name: 'Application', extensions: process.platform === 'win32' ? ['exe'] : ['app', '*'] }],
@@ -155,8 +210,9 @@ ipcMain.on('win:control', (e, action) => {
 });
 
 app.whenReady().then(() => {
+  if (!primaryInstance) return;
   const MIME = { '.wasm': 'application/wasm', '.js': 'text/javascript', '.task': 'application/octet-stream', '.tflite': 'application/octet-stream' };
-  protocol.handle('es-app', async (req) => {
+  protocol.handle('es-app', async (req) => { try {
     const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '');
     const dist = path.join(__dirname, '..', 'dist'); let full = path.join(dist, rel);
     if (!inside(full, dist)) return new Response('forbidden', { status: 403 }); // a sibling such as dist-other/ is outside dist/
@@ -165,10 +221,10 @@ app.whenReady().then(() => {
     const r = await net.fetch(pathToFileURL(full).toString());
     const h = new Headers(r.headers); h.set('Access-Control-Allow-Origin', '*'); const ct = MIME[path.extname(full)]; if (ct) h.set('Content-Type', ct);
     return new Response(r.body, { status: r.status, headers: h });
-  });
+  } catch (e) { crashLog.log('es-app', e); return new Response('bad request', { status: e instanceof URIError || e instanceof TypeError ? 400 : 404 }); } });
   // es-media://local/<path>: local media with HTTP byte ranges (206), so <video>/<audio> can seek anywhere
   const MEDIA_MIME = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', avif: 'image/avif' };
-  protocol.handle('es-media', async (req) => {
+  protocol.handle('es-media', async (req) => { try {
     const p = decodeURIComponent(new URL(req.url).pathname.slice(1));
     if (!G.canRead(p)) return new Response('forbidden', { status: 403 });
     const fsSync = require('fs'); const { Readable } = require('stream');
@@ -183,7 +239,7 @@ app.whenReady().then(() => {
     }
     h.set('Content-Length', String(st.size));
     return new Response(Readable.toWeb(fsSync.createReadStream(p)), { status: 200, headers: h });
-  });
+  } catch (e) { crashLog.log('es-media', e); return new Response('bad request', { status: e instanceof URIError || e instanceof TypeError ? 400 : 404 }); } });
   enforceOffline();
   createWindow();
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());
@@ -197,8 +253,7 @@ ipcMain.on('app:closeOk', (e) => { const w = BrowserWindow.fromWebContents(e.sen
 const projectArg = (argv) => argv.slice(1).find((a) => /\.esproj$/i.test(a) && require('fs').existsSync(a)) || null;
 let pendingProject = projectArg(process.argv); if (pendingProject) { G.grantFile(pendingProject); grantProject(pendingProject); }
 ipcMain.handle('app:takeOpenFile', () => { const p = pendingProject; pendingProject = null; return p; });
-if (!app.requestSingleInstanceLock()) app.quit();
-else app.on('second-instance', (_e, argv) => {
+if (primaryInstance) app.on('second-instance', (_e, argv) => {
   const w = mainWin; if (!w || w.isDestroyed()) return;
   if (w.isMinimized()) w.restore(); w.focus();
   const p = projectArg(argv); if (p) { G.grantFile(p); grantProject(p); w.webContents.send('app:openFile', p); }

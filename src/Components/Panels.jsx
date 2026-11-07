@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import NumInput from './NumInput';
+import { reportError } from '../Services/errorLog';
 import { DUCK_DEFAULTS, generateDucking } from '../Services/ducking';
 import Timeline, { timecode } from './Timeline';
 import { markerColor } from '../Core/markers';
@@ -42,6 +43,7 @@ export const aspectLabel = (w, h) => { const d = gcd(Math.round(w), Math.round(h
 // ---------- Program / Source monitor ----------
 function Monitor({ label }) {
   const cv = useRef(null); const cv2 = useRef(null); // cv2: Comparison View reference image
+  const [gfxError, setGfxError] = useState(null); // why the Program Monitor has no compositor (WebGL2 blocked, GPU unavailable)
   const tA = useRef(null), tB = useRef(null); // Trim Monitor: outgoing / incoming frame
   const playhead = useStore((s) => s.playhead);
   const playing = useStore((s) => s.playing);
@@ -54,7 +56,7 @@ function Monitor({ label }) {
 
   useEffect(() => {
     let raf, comp = null;
-    if (!isSource) { try { comp = new Compositor(cv.current); window.__comp = comp; } catch (e) { console.error(e); } }
+    if (!isSource) { try { comp = new Compositor(cv.current); window.__comp = comp; setGfxError(null); } catch (e) { console.error(e); reportError('compositor', e); setGfxError(String(e?.message || e)); } }
     const g2 = isSource ? cv.current.getContext('2d') : null;
     let lastDraw = 0, lastState = null, lastChange = 0, lastKey = '';
     // Comparison View: the Reference side has its own compositor. Frame: the same frame ungraded (redrawn with the Current
@@ -182,6 +184,7 @@ function Monitor({ label }) {
         {side && <div className="cvwrap" style={{ width: box.w, height: box.h }}><canvas ref={cv2} /><span className="cmp-tag">Reference</span></div>}
         <div className="cvwrap" style={{ width: box.w, height: box.h }}>
           <canvas ref={cv} onClick={onDrawClick} onDoubleClick={finishDraw} style={{ cursor: maskDraw ? 'crosshair' : 'default' }} />
+          {gfxError && <div className="gfx-error err" role="alert">Graphics unavailable: {gfxError}. Restart EditorStage; if this stays, update the graphics driver. Details: Help &gt; Open Log Folder.</div>}
           {split && <CompareSplit cmp={cmp} cv2={cv2} />}
           {side && <span className="cmp-tag">Current</span>}
           {!isSource && <TransformOverlay W={box.w} H={box.h} enabled={overlayOn} />}

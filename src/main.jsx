@@ -3,6 +3,8 @@ import * as transcript from './Services/ai/transcript';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './Components/App';
+import ErrorBoundary from './Components/ErrorBoundary';
+import { installErrorLog } from './Services/errorLog';
 import * as store from './Core/store';
 import * as prefs from './Core/prefs';
 import * as compositor from './Renderers/Compositor';
@@ -73,5 +75,6 @@ window.__es = { colorAuto, projectFile, NumInput, react: React, reactDom, prefs,
   silence, stt, diarize, reframe, captions, audiostage, archive, versions, layout, interchange, fonts, proxy, compare, trim, remix, remixClip, retimed }; // debug/automation handle
 
 // the hidden Export Queue window (?mode=render) renders queued exports and shows no UI
+installErrorLog();
 if (isRenderWindow()) installRenderHost();
-else createRoot(document.getElementById('root')).render(<App />);
+else createRoot(document.getElementById('root')).render(<ErrorBoundary root name="EditorStage"><App /></ErrorBoundary>);

@@ -185,5 +185,17 @@ ok('set({ dirty: false }) treats the current content as saved', st().dirty === f
 S.set({ dirty: true });
 ok('set({ dirty: true }) marks the project unsaved', st().dirty === true);
 
+// C-13: the history of a sequence that no longer exists is released
+{
+  const base = st().sequence;
+  S.addSequence({ ...base, id: 'tmpSeq', name: 'Tmp' }, true);
+  S.set((s) => ({ seqs: Object.fromEntries(Object.entries(s.seqs || {}).filter(([k]) => k !== 'tmpSeq')) }));
+  S.switchSequence(base.id);
+  ok('switching back after the sequence was removed already released its stack', S.pruneStacks() === 0 && S.getState().sequence.id === base.id);
+  S.addSequence({ ...base, id: 'tmp2', name: 'Tmp2' }, true); S.switchSequence(base.id);
+  S.set((s) => ({ seqs: Object.fromEntries(Object.entries(s.seqs || {}).filter(([k]) => k !== 'tmp2')) }));
+  ok('pruneStacks drops the stack of a removed sequence', S.pruneStacks() === 1 && S.pruneStacks() === 0);
+}
+
 console.log(`store: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

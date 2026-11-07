@@ -9,6 +9,7 @@ import { PANEL_COMPONENTS } from './Panels';
 import Dialogs from './Dialogs';
 import { sequenceEnd } from '../Core/editing';
 import { installAudioStageSync, rearmWatches } from '../Services/audiostage';
+import ErrorBoundary from './ErrorBoundary';
 import { startAutoSave, bootRecovery, recoverSession, clearSessionMarker } from '../Services/versions';
 import { run, confirmDiscard, openDialog } from '../Core/commands';
 import { loadPrefs, onPrefs } from '../Core/prefs';
@@ -24,6 +25,8 @@ export default function App() {
   useEffect(() => installShortcuts(), []);
   const remote = useStore((s) => s.remoteMode);
   useEffect(() => { document.body.classList.toggle('remote-mode', !!remote); }, [remote]);
+  const [gpu, setGpu] = useState(null); // set when the app started in software graphics after repeated graphics crashes
+  useEffect(() => { window.editorstage.gpuStatus?.().then((g) => { if (g?.mode === 'software') setGpu(g); }).catch(() => {}); }, []);
   useEffect(() => { // workflow services: AudioStage file sync, auto-save, remote-desktop detection
     installAudioStageSync(); rearmWatches();
     // Preferences: auto-save interval and audio output follow the saved preferences (and every later change)
@@ -85,13 +88,14 @@ export default function App() {
 
   const factory = useCallback((node) => {
     const C = PANEL_COMPONENTS[node.getComponent()];
-    return C ? <C /> : <div className="panel-pad">Unknown panel: {node.getComponent()}</div>;
+    return C ? <ErrorBoundary name={node.getName?.() || node.getComponent()}><C /></ErrorBoundary> : <div className="panel-pad">Unknown panel: {node.getComponent()}</div>;
   }, []);
 
   return (
     <div className="app">
       <MenuBar title={`${name}${dirty ? ' *' : ''} - EditorStage`} />
       <div className="dock"><Layout model={getModel()} factory={factory} /></div>
+      {gpu && <div className="gpu-notice" role="status">EditorStage is using software graphics because {gpu.reason}. Playback may be slower. <button onClick={() => window.editorstage.gpuUseDefault()}>Use default graphics</button> <button onClick={() => setGpu(null)}>Dismiss</button></div>}
       <Dialogs />
       <div className="statusbar">{log[log.length - 1] || 'Ready'}<span className="grow" /><button className={`sb-btn ${remote ? 'on' : ''}`} title="Remote-Optimized Preview (lower preview resolution and frame rate for remote desktop)" onClick={() => run('view.remoteMode')}>🖥 Remote {remote ? 'ON' : 'OFF'}</button><span>Tool: {tool}</span></div>
     </div>

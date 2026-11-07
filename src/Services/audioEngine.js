@@ -12,13 +12,25 @@ const db = (x) => Math.pow(10, x / 20);
 /** stereo panner fed as stereo (a mono source is up-mixed first), so pan 0 leaves the level exactly as it was */
 export const stereoPanner = (c) => { const p = c.createStereoPanner(); p.channelCount = 2; p.channelCountMode = 'explicit'; p.channelInterpretation = 'speakers'; return p; };
 
+let sinkWanted = ''; // the chosen output device ('' = system default)
+/**
+ * The output can stop under us: headphones unplugged, Bluetooth dropped, sleep/wake. A suspended or interrupted context is
+ * resumed (playback starts it again on the next frame anyway); after a device change the chosen device is applied again.
+ */
+export function watchOutputDevice(c, nav = typeof navigator !== 'undefined' ? navigator : null) {
+  c.addEventListener?.('statechange', () => { if (c.state === 'suspended' || c.state === 'interrupted') c.resume?.().catch(() => {}); });
+  nav?.mediaDevices?.addEventListener?.('devicechange', () => {
+    if (c.state === 'suspended' || c.state === 'interrupted') c.resume?.().catch(() => {});
+    if (c.setSinkId) c.setSinkId(sinkWanted).catch(() => {}); // an unplugged device falls back to the default
+  });
+}
 export function audioContext() {
-  if (!ctx) { ctx = new AudioContext(); master = ctx.createGain(); master.connect(ctx.destination); loadWorklets(ctx).then(() => { for (const ch of chains.values()) ch.sig = null; }).catch((e) => console.warn('pitch worklet', e)); }
+  if (!ctx) { ctx = new AudioContext(); watchOutputDevice(ctx); master = ctx.createGain(); master.connect(ctx.destination); loadWorklets(ctx).then(() => { for (const ch of chains.values()) ch.sig = null; }).catch((e) => console.warn('pitch worklet', e)); }
   return ctx;
 }
 export const masterNode = () => { audioContext(); return master; };
 /** Preferences > Audio Output: play through this device ('default' = the system device) */
-export async function setAudioOutput(id) { if (!ctx && (!id || id === 'default')) return; try { const c = audioContext(); if (c.setSinkId) await c.setSinkId(!id || id === 'default' ? '' : id); } catch (e) { console.warn('audio output', e?.message || e); } }
+export async function setAudioOutput(id) { if (!ctx && (!id || id === 'default')) return; try { const c = audioContext(); sinkWanted = !id || id === 'default' ? '' : id; if (c.setSinkId) await c.setSinkId(sinkWanted); } catch (e) { console.warn('audio output', e?.message || e); } }
 
 const sigOf = (clip) => JSON.stringify([
   (clip.effects || []).filter((e) => e.enabled && e.category === 'Audio').map((e) => [e.name, Object.fromEntries(Object.entries(e.params || {}).map(([k, p]) => [k, p.v]))]),

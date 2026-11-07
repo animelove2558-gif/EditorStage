@@ -111,7 +111,10 @@ const resetSaved = () => { revs = {}; savedRevs = {}; savedForced = forced; };
 // (it would throw that work away): it and the older steps of its stack are dropped with a note in the log.
 const stacks = new Map(); // sequence id -> { undo: [], redo: [], base }
 const stackOf = (id = state.sequence.id) => { let s = stacks.get(id); if (!s) { s = { undo: [], redo: [], base: 'New Project' }; stacks.set(id, s); } return s; };
+/** Drop the stacks of sequences that no longer exist (an undone nest): they would hold their snapshots for the whole session. */
+export const pruneStacks = () => { const live = new Set([state.sequence.id, ...Object.keys(state.seqs || {})]); let n = 0; for (const id of [...stacks.keys()]) if (!live.has(id)) { stacks.delete(id); n++; } return n; };
 const showHistory = () => {
+  if (stacks.size > 1 + Object.keys(state.seqs || {}).length) pruneStacks();
   const s = stackOf();
   const history = [{ label: s.base }, ...s.undo.map((e) => ({ label: e.label })), ...[...s.redo].reverse().map((e) => ({ label: e.label }))];
   state = { ...state, history, historyIndex: s.undo.length };

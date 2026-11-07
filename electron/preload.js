@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('editorstage', {
   rename: (from, to) => ipcRenderer.invoke('fs:rename', from, to),
   copyFile: (from, to) => ipcRenderer.invoke('fs:copy', from, to),
   mogrt: { install: (p) => ipcRenderer.invoke('mogrt:install', p), list: () => ipcRenderer.invoke('mogrt:list'), read: (id) => ipcRenderer.invoke('mogrt:read', id), remove: (id) => ipcRenderer.invoke('mogrt:remove', id) },
+  gpuStatus: () => ipcRenderer.invoke('app:gpu-status'), gpuUseDefault: () => ipcRenderer.invoke('app:gpu-use-default'),
+  logError: (kind, msg) => ipcRenderer.send('log:write', kind, msg), openLogFolder: () => ipcRenderer.invoke('log:openFolder'),
   platform: process.platform,
   // workflow features (electron/workflow.js)
   mkdir: (p) => ipcRenderer.invoke('fs:mkdir', p), exists: (p) => ipcRenderer.invoke('fs:exists', p), stat: (p) => ipcRenderer.invoke('fs:stat', p), readdir: (p) => ipcRenderer.invoke('fs:readdir', p), findFiles: (roots, names, depth) => ipcRenderer.invoke('fs:findFiles', roots, names, depth),
